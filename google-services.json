@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "518009465151",
+    "project_id": "travel-os-28bb9",
+    "storage_bucket": "travel-os-28bb9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:518009465151:android:b51667906d3d2ba77acb8a",
+        "android_client_info": {
+          "package_name": "com.hook.travelos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9ll2XzglC-FEfGAP2D-QeZc-9PhtnS38"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
