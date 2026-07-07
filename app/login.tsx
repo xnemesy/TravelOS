@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, SafeAreaView, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { View, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -7,7 +8,7 @@ import { AuthService } from '../src/services/auth/auth.service';
 import { Typography } from '../src/shared/components/Typography';
 import { Button } from '../src/shared/components/Button';
 import { Card } from '../src/shared/components/Card';
-import { TextInput } from 'react-native';
+import { TextField } from '../src/shared/components/forms/TextField';
 
 // NOTA: Questa schermata è attualmente disconnessa dalla navigazione principale
 // ed è pronta per essere testata in isolamento o agganciata successivamente.
@@ -66,30 +67,24 @@ export default function LoginScreen() {
               </View>
             )}
 
-            <View className="bg-white rounded-[20px] mb-4 overflow-hidden shadow-sm">
-              <View className="px-4 py-3 border-b border-gray-100">
-                <Typography variant="caption" color="secondary" className="mb-1">Email</Typography>
-                <TextInput 
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  className="font-inter text-base text-text-primary py-1"
-                  placeholder="La tua email"
-                  placeholderTextColor="#C6C6C8"
-                />
-              </View>
-              <View className="px-4 py-3">
-                <Typography variant="caption" color="secondary" className="mb-1">Password</Typography>
-                <TextInput 
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  className="font-inter text-base text-text-primary py-1"
-                  placeholder="La tua password"
-                  placeholderTextColor="#C6C6C8"
-                />
-              </View>
+            <View className="mb-2">
+              <TextField
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="La tua email"
+                leftIcon="mail-outline"
+              />
+              <TextField
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholder="La tua password"
+                leftIcon="lock-closed-outline"
+              />
             </View>
           </Card>
 

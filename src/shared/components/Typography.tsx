@@ -9,6 +9,7 @@ export type TypographyVariant =
   | 'bodySemibold' 
   | 'caption' 
   | 'captionMedium'
+  | 'captionSemibold'
   | 'overline';
 
 interface TypographyProps extends TextProps {
@@ -48,6 +49,9 @@ export const Typography: React.FC<TypographyProps> = ({
       break;
     case 'captionMedium':
       variantClasses = 'text-sm font-medium';
+      break;
+    case 'captionSemibold':
+      variantClasses = 'text-sm font-semibold';
       break;
     case 'overline':
       variantClasses = 'text-xs font-semibold uppercase tracking-widest';

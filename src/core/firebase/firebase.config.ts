@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import * as fbAuth from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,10 +17,20 @@ const firebaseConfig = {
 // Inizializza l'app in modo sicuro (evita instanziazioni doppie con l'hot reload)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Inizializza l'Auth con persistenza tramite AsyncStorage per React Native
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
-});
+// Inizializza l'Auth con persistenza tramite AsyncStorage per React Native in modo sicuro
+let auth: any;
+try {
+  const getPersistence = (fbAuth as any).getReactNativePersistence;
+  if (typeof getPersistence === 'function') {
+    auth = fbAuth.initializeAuth(app, {
+      persistence: getPersistence(AsyncStorage)
+    });
+  } else {
+    auth = fbAuth.getAuth(app);
+  }
+} catch (error) {
+  auth = fbAuth.getAuth(app);
+}
 
 // Inizializza i servizi
 const db = getFirestore(app);

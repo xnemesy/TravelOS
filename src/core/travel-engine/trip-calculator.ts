@@ -13,6 +13,8 @@ export class TripCalculator {
    */
   static getTripStatus(trip: Trip, now: Date = new Date()): TripStatus {
     if (trip.status === 'cancelled') return 'cancelled';
+    if (trip.status === 'ready' && now < trip.startDate) return 'ready';
+    if (trip.status === 'completed') return 'completed';
     
     if (now < trip.startDate) return 'planned';
     if (now >= trip.startDate && now <= trip.endDate) return 'ongoing';
@@ -59,8 +61,11 @@ export class TripCalculator {
    */
   static getProgress(trip: Trip, now: Date = new Date()): number {
     const status = this.getTripStatus(trip, now);
-    if (status === 'planned' || status === 'cancelled') return 0;
     if (status === 'completed') return 100;
+    if (status === 'cancelled') return 0;
+    if (status === 'planned' || status === 'ready') {
+      return trip.progress !== undefined ? trip.progress : 0;
+    }
 
     const totalDurationMs = trip.endDate.getTime() - trip.startDate.getTime();
     const elapsedMs = now.getTime() - trip.startDate.getTime();

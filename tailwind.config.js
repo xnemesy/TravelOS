@@ -8,8 +8,15 @@ module.exports = {
         primary: "#007AFF", // iOS blue as default primary
         background: "#F2F2F7", // iOS grouped background
         card: "#FFFFFF",
-        text: "#1C1C1E",
-        border: "#C6C6C8",
+        text: {
+          DEFAULT: "#1C1C1E",
+          primary: "#1C1C1E",
+          secondary: "#6E6E73",
+        },
+        border: {
+          DEFAULT: "#C6C6C8",
+          light: "#E5E5EA",
+        },
       }
     },
   },

@@ -1,208 +1,493 @@
-import React from 'react';
-import { View, ScrollView, SafeAreaView, Pressable, StatusBar } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import Animated, { FadeIn, SlideInDown, FadeInUp } from 'react-native-reanimated';
+import React, { useState, useEffect } from 'react';
+import { View, StatusBar, Pressable, ScrollView, ImageBackground, Modal, Alert, StyleSheet } from 'react-native';
+import Animated, { useAnimatedStyle, withSpring, withTiming, useSharedValue } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams, useGlobalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-import { useTripStore } from '../../../src/features/trips/store/trip.store';
-import { TripCalculator } from '../../../src/core/travel-engine/trip-calculator';
-import { TripEvent } from '../../../src/domain/trip/models/trip.model';
-
 import { Typography } from '../../../src/shared/components/Typography';
-import { Card } from '../../../src/shared/components/Card';
-import { Button } from '../../../src/shared/components/Button';
-import { IconButton } from '../../../src/shared/components/IconButton';
-import { radius } from '../../../src/core/theme/radius';
+import { useTravelContext, useNextPlace, usePlaces, useTravelActions } from '../../../src/shared/hooks';
+import { useTripStore } from '../../../src/features/trips/store/trip.store';
+import { SavedPlacesLibrary } from '../../../src/features/itinerary/components/SavedPlacesLibrary';
+import { TimelinePreview } from '../../../src/features/itinerary/components/TimelinePreview';
+import { formatDistance } from '../../../src/shared/utils/distance.utils';
+import { hydrateContext } from '../../../src/core/engines';
+import { usePlannerStore } from '../../../src/features/itinerary/store/planner.store';
 
-export default function JourneyScreen() {
-  const { id } = useLocalSearchParams();
+// ==============================================
+// SOTTO-COMPONENTI PER LE 3 FASI DEL VIAGGIO
+// ==============================================
+
+const PlanningDashboard = ({ tripId }: { tripId: string }) => {
+  const [activeTab, setActiveTab] = useState<'planner' | 'library'>('planner');
   const router = useRouter();
-  const trip = useTripStore(state => state.getTripById(id as string));
-  const events = useTripStore(state => state.getEventsByTripId(id as string));
-
-  if (!trip) return null;
-
-  const now = new Date();
   
-  const currentDay = TripCalculator.getCurrentDay(trip, now);
-  
-  // Per la logica della NOW Card, troviamo l'evento in corso o il prossimo.
-  let currentEvent: TripEvent | null = null;
-  let nextEvent: TripEvent | null = null;
-  
-  for (const event of events) {
-    if (now >= event.startTime && now <= event.endTime) {
-      currentEvent = event;
-      break;
-    }
-    if (now < event.startTime && (!nextEvent || event.startTime < nextEvent.startTime)) {
-      nextEvent = event;
-    }
-  }
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      {/* Search Bar - Punto di ingresso per catalogo e ricerca */}
+      <Pressable 
+        onPress={() => router.push(`/trip/${tripId}/places` as any)}
+        className="bg-gray-100 rounded-2xl flex-row items-center p-4 mb-5 active:opacity-70"
+      >
+        <Ionicons name="search" size={20} color="#9CA3AF" />
+        <Typography variant="body" className="text-gray-500 ml-3">Cerca o esplora luoghi salvati...</Typography>
+      </Pressable>
 
-  const focusEvent = currentEvent || nextEvent;
-  const isOngoing = !!currentEvent;
+      {/* Toggle Tab tra Planner Giornaliero e Libreria */}
+      <View className="flex-row bg-gray-100 p-1 rounded-2xl mb-5">
+        <Pressable
+          onPress={() => setActiveTab('planner')}
+          className={`flex-1 py-2.5 rounded-xl items-center flex-row justify-center ${
+            activeTab === 'planner' ? 'bg-white shadow-sm' : ''
+          }`}
+        >
+          <Ionicons name="calendar" size={16} color={activeTab === 'planner' ? '#1C1C1E' : '#6B7280'} />
+          <Typography variant="captionSemibold" className={`ml-2 ${activeTab === 'planner' ? 'text-gray-900' : 'text-gray-600'}`}>
+            Planner Giornaliero
+          </Typography>
+        </Pressable>
 
-  // Filtriamo gli eventi di "oggi"
-  const todayEvents = events.filter(e => 
-    e.startTime.getDate() === now.getDate() && 
-    e.startTime.getMonth() === now.getMonth()
-  ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+        <Pressable
+          onPress={() => setActiveTab('library')}
+          className={`flex-1 py-2.5 rounded-xl items-center flex-row justify-center ${
+            activeTab === 'library' ? 'bg-white shadow-sm' : ''
+          }`}
+        >
+          <Ionicons name="bookmark" size={16} color={activeTab === 'library' ? '#1C1C1E' : '#6B7280'} />
+          <Typography variant="captionSemibold" className={`ml-2 ${activeTab === 'library' ? 'text-gray-900' : 'text-gray-600'}`}>
+            Libreria (Salvati)
+          </Typography>
+        </Pressable>
+      </View>
 
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'flight': return 'airplane';
-      case 'accommodation': return 'bed';
-      case 'activity': return 'compass';
-      default: return 'calendar';
+      {/* Render dinamico del motore del Planner (Timeline vs Libreria) */}
+      {activeTab === 'planner' ? (
+        <TimelinePreview tripId={tripId} />
+      ) : (
+        <SavedPlacesLibrary tripId={tripId} />
+      )}
+    </ScrollView>
+  );
+};
+
+const JourneyDashboard = ({ tripId }: { tripId: string }) => {
+  const router = useRouter();
+  const { currentOrNextPlace } = useNextPlace(tripId);
+  const actions = useTravelActions();
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <View className="bg-green-50 rounded-2xl p-4 mb-6 flex-row items-center border border-green-100">
+        <Ionicons name="navigate-circle" size={32} color="#10B981" />
+        <View className="ml-3 flex-1">
+          <Typography variant="bodySemibold" className="text-green-900">In Viaggio!</Typography>
+          <Typography variant="captionMedium" className="text-green-700">Modalità live attiva nel Context Engine</Typography>
+        </View>
+        <Pressable 
+          onPress={() => router.push(`/trip/${tripId}/today` as any)}
+          className="bg-green-600 px-3 py-1.5 rounded-xl"
+        >
+          <Typography variant="captionSemibold" className="text-white">Apri Today</Typography>
+        </Pressable>
+      </View>
+
+      <Typography variant="h3" className="mb-4">Prossima Tappa in Programma</Typography>
+      
+      {!currentOrNextPlace ? (
+        <View className="bg-white rounded-3xl p-8 border border-gray-100 items-center justify-center">
+          <Ionicons name="checkmark-done-circle" size={48} color="#10B981" className="mb-2" />
+          <Typography variant="bodySemibold" className="text-gray-800">Nessuna tappa imminente</Typography>
+          <Typography variant="caption" className="text-gray-500 text-center mt-1">
+            Hai completato le tappe pianificate per oggi!
+          </Typography>
+        </View>
+      ) : (
+        <Pressable 
+          onPress={() => router.push(`/trip/${tripId}/places/${currentOrNextPlace.id}` as any)}
+          className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 mb-8 active:opacity-90"
+        >
+          <ImageBackground 
+            source={{ uri: currentOrNextPlace.coverImageUrl || 'https://images.unsplash.com/photo-1549877452-9c387954fbc2?q=80&w=800&auto=format&fit=crop' }}
+            className="h-44 bg-gray-200 justify-end"
+          >
+            <View className="absolute inset-0 bg-black/20" />
+            <View className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/80 to-transparent" />
+            <View className="p-4 relative z-10">
+              <Typography variant="captionMedium" color="inverse" className="text-sky-300 mb-1">
+                {(currentOrNextPlace.estimatedWalkMinutes && currentOrNextPlace.estimatedWalkMinutes > 0) 
+                  ? `Tra ${currentOrNextPlace.estimatedWalkMinutes} min a piedi (${formatDistance(currentOrNextPlace.distanceMeters || 0)})` 
+                  : '📍 Punto di partenza della giornata (Tappa attuale)'}
+              </Typography>
+              <Typography variant="h2" color="inverse" className="text-white text-xl font-bold" numberOfLines={1}>
+                {currentOrNextPlace.name}
+              </Typography>
+            </View>
+          </ImageBackground>
+
+          <View className="p-4 flex-row gap-2">
+            <Pressable 
+              onPress={() => actions.markAsVisited(tripId, currentOrNextPlace.id)}
+              className="flex-[2] bg-green-600 rounded-xl py-3 items-center justify-center flex-row shadow-sm"
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" className="mr-1.5" />
+              <Typography variant="bodySemibold" className="text-white">Check-in / Visitato</Typography>
+            </Pressable>
+            
+            <Pressable 
+              onPress={() => router.push(`/trip/${tripId}/places/${currentOrNextPlace.id}` as any)}
+              className="flex-1 bg-gray-100 rounded-xl py-3 items-center justify-center"
+            >
+              <Typography variant="bodySemibold" className="text-gray-900">Dettaglio</Typography>
+            </Pressable>
+          </View>
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+};
+
+const MemoriesDashboard = ({ tripId }: { tripId: string }) => {
+  const router = useRouter();
+  const { visitedPlaces, visitedPlacesCount } = usePlaces(tripId);
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <View className="items-center py-6">
+        <Typography variant="h1" className="text-gray-900 mb-2">Bentornato</Typography>
+        <Typography variant="body" className="text-gray-500 text-center">
+          Il tuo viaggio è archiviato. Ecco i ricordi generati dal Context Engine.
+        </Typography>
+      </View>
+
+      <View className="flex-row gap-3 mb-8">
+        <View className="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 items-center">
+          <Ionicons name="checkmark-circle" size={24} color="#10B981" className="mb-2" />
+          <Typography variant="h3" className="text-gray-900">{visitedPlacesCount}</Typography>
+          <Typography variant="caption" className="text-gray-500">Luoghi Visitati</Typography>
+        </View>
+        <View className="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 items-center">
+          <Ionicons name="camera" size={24} color="#3B82F6" className="mb-2" />
+          <Typography variant="h3" className="text-gray-900">{visitedPlacesCount * 12}</Typography>
+          <Typography variant="caption" className="text-gray-500">Foto & Note</Typography>
+        </View>
+      </View>
+
+      <Typography variant="h3" className="mb-4">Il tuo Diario ({visitedPlaces.length})</Typography>
+      
+      {visitedPlaces.length > 0 ? (
+        <View className="mb-8">
+          {visitedPlaces.map((place) => (
+            <Pressable 
+              key={place.id}
+              onPress={() => router.push(`/trip/${tripId}/places/${place.id}` as any)}
+              className="flex-row bg-white rounded-2xl p-3 mb-4 shadow-sm border border-gray-100 active:opacity-80"
+            >
+              <ImageBackground 
+                source={{ uri: place.coverImageUrl || 'https://via.placeholder.com/150' }}
+                className="w-20 h-20 rounded-xl overflow-hidden"
+                resizeMode="cover"
+              />
+              <View className="flex-1 ml-4 justify-center">
+                <View className="flex-row justify-between items-center mb-1">
+                  <Typography variant="captionMedium" className="text-gray-500 capitalize">
+                    {place.category}
+                  </Typography>
+                  <View className="flex-row items-center">
+                    <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                    <Typography variant="caption" className="text-green-700 ml-1">Visitato</Typography>
+                  </View>
+                </View>
+                <Typography variant="bodySemibold" className="text-gray-900 mb-1" numberOfLines={1}>
+                  {place.name}
+                </Typography>
+                <Typography variant="caption" className="text-gray-500" numberOfLines={1}>
+                  {place.notes ? `"${place.notes}"` : 'Nessuna nota nel diario.'}
+                </Typography>
+              </View>
+              <View className="justify-center pl-2">
+                <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <View className="bg-gray-50 border border-gray-100 rounded-2xl p-8 items-center justify-center mb-8">
+          <Ionicons name="book" size={32} color="#D1D5DB" className="mb-2" />
+          <Typography variant="body" className="text-gray-500 text-center">
+            Segna i luoghi come visitati con il tasto Check-in per sbloccare il tuo diario qui.
+          </Typography>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+// ==============================================
+// COMPONENTE PRINCIPALE (SWITCH DINAMICO)
+// ==============================================
+
+export default function TripHomeScreen() {
+  const router = useRouter();
+  const localParams = useLocalSearchParams<{ id: string | string[] }>();
+  const globalParams = useGlobalSearchParams<{ id: string | string[] }>();
+  const idParam = localParams.id || globalParams.id;
+  const tripId = (Array.isArray(idParam) ? idParam[0] : idParam) || 'trip-budapest-2026';
+
+  const context = useTravelContext(tripId);
+  const { duplicateTrip, archiveTrip, deleteTrip } = useTripStore();
+  const [overrideStatus, setOverrideStatus] = useState<'planned' | 'ongoing' | 'completed' | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
+  const [isFabOpen, setIsFabOpen] = useState(false);
+
+  const fabRotation = useSharedValue(0);
+  const fabMenuOpacity = useSharedValue(0);
+  const fabMenuTranslateY = useSharedValue(20);
+
+  const toggleFab = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isFabOpen) {
+      fabRotation.value = withSpring(0);
+      fabMenuOpacity.value = withTiming(0, { duration: 200 });
+      fabMenuTranslateY.value = withTiming(20, { duration: 200 });
+      setTimeout(() => setIsFabOpen(false), 200);
+    } else {
+      setIsFabOpen(true);
+      fabRotation.value = withSpring(45);
+      fabMenuOpacity.value = withTiming(1, { duration: 200 });
+      fabMenuTranslateY.value = withSpring(0);
     }
   };
 
-  const getEventColor = (type: string) => {
-    switch (type) {
-      case 'flight': return '#007AFF'; // Blue
-      case 'accommodation': return '#5856D6'; // Purple
-      case 'activity': return '#FF9500'; // Orange
-      default: return '#34C759'; // Green
+  const fabAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${fabRotation.value}deg` }]
+  }));
+
+  const fabMenuAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: fabMenuOpacity.value,
+    transform: [{ translateY: fabMenuTranslateY.value }],
+    display: fabMenuOpacity.value === 0 && !isFabOpen ? 'none' : 'flex'
+  }));
+
+  useEffect(() => {
+    hydrateContext(tripId).then(() => {
+      setIsHydrating(false);
+    });
+  }, [tripId]);
+
+  const currentStatus = overrideStatus || context.tripPhase || 'planned';
+  const tripTitle = context.tripTitle || 'Dettaglio Viaggio';
+
+  // Seleziona la dashboard in base allo stato
+  const renderDashboard = () => {
+    switch (currentStatus) {
+      case 'planned': return <PlanningDashboard tripId={tripId} />;
+      case 'ongoing': return <JourneyDashboard tripId={tripId} />;
+      case 'completed': return <MemoriesDashboard tripId={tripId} />;
+      default: return <PlanningDashboard tripId={tripId} />;
     }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
       <StatusBar barStyle="dark-content" />
       
-      {/* HEADER MINIMAL (Concept A) */}
-      <View className="px-5 py-2 flex-row items-center justify-between">
-        <Pressable onPress={() => router.back()} className="flex-row items-center">
-          <Ionicons name="chevron-back" size={24} color="#007AFF" />
-          <Typography variant="bodySemibold" color="accent" className="ml-1">Viaggi</Typography>
+      {/* Header Globale */}
+      <View className="px-5 py-2 flex-row items-center justify-between border-b border-gray-100 pb-3">
+        <Pressable onPress={() => router.push('/')} className="flex-row items-center">
+          <Ionicons name="chevron-back" size={24} color="#1C1C1E" />
+          <Typography variant="bodySemibold" className="text-gray-900 ml-1">Home</Typography>
         </Pressable>
-        <Typography variant="captionMedium" color="secondary">{currentDay ? `Day ${currentDay}` : 'In arrivo'}</Typography>
+        <Pressable 
+          onPress={() => setShowMenu(true)}
+          className="w-8 h-8 bg-gray-100 rounded-full items-center justify-center active:bg-gray-200"
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color="#1C1C1E" />
+        </Pressable>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-        
-        {/* TITOLO (Concept A) */}
-        <Animated.View entering={FadeIn.duration(400)} className="mb-8 mt-2">
-          <Typography variant="overline" color="secondary" className="mb-2">Journey</Typography>
-          <Typography variant="h1" className="mb-1">
-            {now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^\w/, c => c.toUpperCase())}
-          </Typography>
-          <Typography variant="h3" color="secondary">{trip.destination}</Typography>
-        </Animated.View>
+      <View className="px-5 pt-3 mb-2">
+        <Typography variant="h1" className="text-gray-900 text-3xl font-bold tracking-tight">
+          {tripTitle}
+        </Typography>
 
-        {/* NOW CARD (Concept B) */}
-        <Animated.View entering={SlideInDown.delay(100).duration(400).springify()}>
-          {focusEvent ? (
-            <Card 
-              padding="none" 
-              className="mb-10 overflow-hidden border-0" 
-              style={{ backgroundColor: isOngoing ? getEventColor(focusEvent.type) : '#F2F2F7', borderRadius: radius.xxl }}
-            >
-              <View className="p-6">
-                <View className="flex-row justify-between items-center mb-4">
-                  <View className={`px-3 py-1 rounded-full ${isOngoing ? 'bg-white/20' : 'bg-gray-200'}`}>
-                    <Typography variant="overline" color={isOngoing ? 'inverse' : 'primary'}>
-                      {isOngoing ? 'In Corso' : 'Prossimo Evento'}
-                    </Typography>
-                  </View>
-                  <Ionicons name={getEventIcon(focusEvent.type)} size={24} color={isOngoing ? '#FFF' : getEventColor(focusEvent.type)} />
-                </View>
-                
-                <Typography variant="h2" color={isOngoing ? 'inverse' : 'primary'} className="mb-2">
-                  {focusEvent.title}
-                </Typography>
-                
-                <Typography variant="bodySemibold" color={isOngoing ? 'inverse' : 'secondary'} style={{ opacity: isOngoing ? 0.8 : 1 }}>
-                  {focusEvent.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} — {focusEvent.endTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-                </Typography>
-
-                {/* Dettagli contesto finti ma realistici */}
-                <View className="mt-4 flex-row items-center">
-                  <Ionicons name="location" size={16} color={isOngoing ? '#FFF' : '#8E8E93'} />
-                  <Typography variant="captionMedium" color={isOngoing ? 'inverse' : 'secondary'} className="ml-2" style={{ opacity: isOngoing ? 0.8 : 1 }}>
-                    {focusEvent.type === 'flight' ? 'Terminal 2, Gate B14' : 'A 12 min a piedi'}
-                  </Typography>
-                </View>
-              </View>
-
-              {/* Contenitore azioni rapide contestuali */}
-              <View className={`p-4 flex-row justify-around border-t ${isOngoing ? 'border-white/10 bg-black/10' : 'border-gray-200 bg-white'}`}>
-                <Pressable onPress={() => router.push(`/trip/${trip.id}/event/${focusEvent.id}`)} className="items-center">
-                  <Ionicons name="map-outline" size={24} color={isOngoing ? '#FFF' : '#007AFF'} />
-                  <Typography variant="caption" color={isOngoing ? 'inverse' : 'primary'} className="mt-1">Naviga</Typography>
-                </Pressable>
-                <Pressable onPress={() => router.push(`/trip/${trip.id}/event/${focusEvent.id}`)} className="items-center">
-                  <Ionicons name="receipt-outline" size={24} color={isOngoing ? '#FFF' : '#007AFF'} />
-                  <Typography variant="caption" color={isOngoing ? 'inverse' : 'primary'} className="mt-1">Spesa</Typography>
-                </Pressable>
-                <Pressable onPress={() => router.push(`/trip/${trip.id}/event/${focusEvent.id}`)} className="items-center">
-                  <Ionicons name="camera-outline" size={24} color={isOngoing ? '#FFF' : '#007AFF'} />
-                  <Typography variant="caption" color={isOngoing ? 'inverse' : 'primary'} className="mt-1">Foto</Typography>
-                </Pressable>
-              </View>
-            </Card>
-          ) : (
-            <Card className="mb-10 items-center justify-center py-10" variant="flat">
-              <Typography variant="bodySemibold" color="secondary">Nessun evento in programma oggi.</Typography>
-            </Card>
-          )}
-        </Animated.View>
-
-        {/* TIMELINE VERTICALE (Concept C) */}
-        <Animated.View entering={FadeInUp.delay(200).duration(400)}>
-          <Typography variant="h3" className="mb-6 ml-2">La Giornata</Typography>
-          
-          <View className="pl-4">
-            {todayEvents.map((event, index) => {
-              const isPast = event.endTime < now;
-              const isCurrent = now >= event.startTime && now <= event.endTime;
-              const isLast = index === todayEvents.length - 1;
-              
-              const nodeColor = isPast ? '#C6C6C8' : isCurrent ? getEventColor(event.type) : '#E5E5EA';
-              
-              return (
-                <Pressable 
-                  key={event.id}
-                  onPress={() => router.push(`/trip/${trip.id}/event/${event.id}`)}
-                  className="flex-row mb-6 relative"
-                >
-                  {/* Linea verticale che connette i nodi */}
-                  {!isLast && (
-                    <View 
-                      className="absolute left-2.5 top-6 bottom-[-24px] w-0.5 bg-gray-200" 
-                      style={{ zIndex: -1 }} 
-                    />
-                  )}
-                  
-                  {/* Nodo Timeline */}
-                  <View className="mr-4 mt-1">
-                    <View 
-                      className="w-5 h-5 rounded-full items-center justify-center bg-white border-2"
-                      style={{ borderColor: nodeColor }}
-                    >
-                      {isPast && <View className="w-2.5 h-2.5 rounded-full bg-gray-300" />}
-                      {isCurrent && <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: nodeColor }} />}
-                    </View>
-                  </View>
-
-                  {/* Contenuto Evento */}
-                  <View className={`flex-1 ${isPast ? 'opacity-50' : 'opacity-100'}`}>
-                    <Typography variant="bodySemibold" color={isCurrent ? 'primary' : isPast ? 'secondary' : 'primary'}>
-                      {event.title}
-                    </Typography>
-                    <Typography variant="captionMedium" color="secondary" className="mt-0.5">
-                      {event.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} 
-                      {!isPast && ` — ${event.endTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
-                    </Typography>
-                  </View>
-                </Pressable>
-              );
-            })}
+        {/* Journey Score Progress Bar */}
+        {currentStatus === 'planned' && (
+          <View className="mt-4 mb-2">
+            <View className="flex-row justify-between items-end mb-1.5">
+              <Typography variant="captionSemibold" className="text-gray-500 uppercase tracking-wider text-[10px]">
+                Stato Organizzazione
+              </Typography>
+              <Typography variant="bodySemibold" className="text-gray-900">
+                {`${context.timeline?.days?.filter((d: any) => d.places?.length > 0).length || 0} di ${context.totalDays || 1} giornate organizzate`}
+              </Typography>
+            </View>
+            <View className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+              <View 
+                className="h-full bg-gray-900 rounded-full" 
+                style={{ width: `${context.journeyScore || 0}%` }}
+              />
+            </View>
           </View>
-        </Animated.View>
+        )}
 
-      </ScrollView>
+        {/* Phase Switcher: ti permette di consultare o pianificare il viaggio in qualsiasi momento */}
+        <View className="flex-row gap-2 mt-2.5 mb-1">
+          {[
+            { id: 'planned', label: 'Pianificazione', icon: 'calendar-outline' },
+            { id: 'ongoing', label: 'In viaggio', icon: 'navigate-outline' },
+            { id: 'completed', label: 'Diario', icon: 'book-outline' },
+          ].map((phase) => {
+            const isActive = currentStatus === phase.id;
+            return (
+              <Pressable
+                key={phase.id}
+                onPress={() => setOverrideStatus(phase.id as any)}
+                className={`px-3 py-1.5 rounded-full flex-row items-center border ${
+                  isActive 
+                    ? 'bg-gray-900 border-gray-900' 
+                    : 'bg-white border-gray-200'
+                }`}
+              >
+                <Ionicons 
+                  name={phase.icon as any} 
+                  size={12} 
+                  color={isActive ? '#FFFFFF' : '#6B7280'} 
+                />
+                <Typography 
+                  variant="captionSemibold" 
+                  className={`ml-1.5 ${isActive ? 'text-white' : 'text-gray-600'}`}
+                >
+                  {phase.label}
+                </Typography>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Rende dinamicamente la dashboard corretta garantendo flex: 1 */}
+      <View style={{ flex: 1, opacity: isHydrating ? 0.5 : 1 }}>
+        {renderDashboard()}
+      </View>
+
+      {/* SMART FAB */}
+      {currentStatus === 'planned' && (
+        <View className="absolute bottom-10 right-5 items-end z-50">
+          {isFabOpen && (
+            <Pressable 
+              className="absolute -top-[1000px] -left-[1000px] -right-[1000px] -bottom-[1000px]" 
+              onPress={toggleFab} 
+            />
+          )}
+          
+          <Animated.View style={fabMenuAnimatedStyle} className="mb-4 items-end">
+            <Pressable 
+              onPress={() => {
+                toggleFab();
+                router.push(`/trip/${tripId}/places` as any);
+              }}
+              className="bg-white px-4 py-2.5 rounded-full shadow-lg border border-gray-100 flex-row items-center mb-2"
+            >
+              <Typography variant="bodySemibold" className="text-gray-900 mr-2">Esplora Luoghi</Typography>
+              <View className="w-8 h-8 rounded-full bg-blue-50 items-center justify-center">
+                <Ionicons name="search" size={16} color="#2563EB" />
+              </View>
+            </Pressable>
+            <Pressable 
+              onPress={() => {
+                toggleFab();
+                const selectedDay = usePlannerStore.getState().selectedDay || 1;
+                router.push(`/trip/${tripId}/itinerary?day=${selectedDay}` as any);
+              }}
+              className="bg-white px-4 py-2.5 rounded-full shadow-lg border border-gray-100 flex-row items-center mb-2"
+            >
+              <Typography variant="bodySemibold" className="text-gray-900 mr-2">Ottimizza con AI</Typography>
+              <View className="w-8 h-8 rounded-full bg-green-50 items-center justify-center">
+                <Ionicons name="color-wand" size={16} color="#10B981" />
+              </View>
+            </Pressable>
+          </Animated.View>
+
+          <Pressable onPress={toggleFab}>
+            <Animated.View style={fabAnimatedStyle} className="w-14 h-14 bg-gray-900 rounded-full shadow-lg items-center justify-center">
+              <Ionicons name="add" size={32} color="#FFFFFF" />
+            </Animated.View>
+          </Pressable>
+        </View>
+      )}
+      
+      {/* 3-dots Action Menu Modal */}
+      <Modal 
+        visible={showMenu} 
+        transparent 
+        animationType="fade" 
+        onRequestClose={() => setShowMenu(false)}
+      >
+        <Pressable className="flex-1 bg-black/40 justify-end p-5" onPress={() => setShowMenu(false)}>
+          <View className="bg-white rounded-3xl p-5 shadow-xl border border-gray-100" onStartShouldSetResponder={() => true}>
+            <View className="w-12 h-1 bg-gray-200 rounded-full self-center mb-4" />
+            <Typography variant="captionSemibold" className="text-gray-400 uppercase tracking-wider mb-3 px-2">
+              Gestisci Viaggio
+            </Typography>
+            
+            <Pressable 
+              onPress={() => {
+                setShowMenu(false);
+                router.push({ pathname: '/trip/create', params: { editTripId: tripId } } as any);
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-gray-50"
+            >
+              <Ionicons name="create-outline" size={22} color="#1C1C1E" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-gray-900 text-base">Modifica viaggio</Typography>
+            </Pressable>
+
+            <Pressable 
+              onPress={async () => {
+                setShowMenu(false);
+                await duplicateTrip(tripId);
+                router.push('/');
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-gray-50"
+            >
+              <Ionicons name="copy-outline" size={22} color="#1C1C1E" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-gray-900 text-base">Duplica viaggio (date azzerate)</Typography>
+            </Pressable>
+
+            <Pressable 
+              onPress={async () => {
+                setShowMenu(false);
+                await archiveTrip(tripId);
+                router.push('/');
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-gray-50"
+            >
+              <Ionicons name="archive-outline" size={22} color="#1C1C1E" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-gray-900 text-base">Archivia viaggio</Typography>
+            </Pressable>
+
+            <View className="h-px bg-gray-100 my-1" />
+
+            <Pressable 
+              onPress={() => {
+                setShowMenu(false);
+                Alert.alert(
+                  'Elimina viaggio',
+                  'Sei sicuro di voler eliminare definitivamente questo viaggio e i suoi ricordi?',
+                  [
+                    { text: 'Annulla', style: 'cancel' },
+                    { text: 'Elimina', style: 'destructive', onPress: async () => { await deleteTrip(tripId); router.push('/'); } }
+                  ]
+                );
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-red-50"
+            >
+              <Ionicons name="trash-outline" size={22} color="#EF4444" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-red-600 text-base">Elimina definitivamente</Typography>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

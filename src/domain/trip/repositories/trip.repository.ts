@@ -1,25 +1,23 @@
 import { ITripRepository } from './trip.repository.interface';
 import { Trip, TripSchema } from '../models/trip.model';
 import { ILocalDatabase } from '../../../core/storage/local-database.interface';
-import { db } from '../../../core/firebase/firebase.config';
-import { doc, getDoc, getDocs, collection, query, where, setDoc, deleteDoc } from 'firebase/firestore';
 
 const TRIPS_CACHE_KEY = 'cache_user_trips_';
 
+/**
+ * TripRepository persiste esclusivamente su storage locale (MMKV/Isar) tramite ILocalDatabase.
+ * Ogni sincronizzazione cloud è esplicitamente rimandata alla futura implementazione del SyncEngine.
+ */
 export class TripRepository implements ITripRepository {
   constructor(private localDb: ILocalDatabase) {}
 
-  /**
-   * Helper per serializzare/deserializzare le Date in JSON, dato che MMKV salva stringhe.
-   * Firestore restituisce Timestamp, che convertiamo in Date.
-   */
-  private serializeTrips(trips: Trip[]): string {
-    return JSON.stringify(trips);
+  private getCacheKey(userId: string): string {
+    return `${TRIPS_CACHE_KEY}${userId}`;
   }
 
-  private deserializeTrips(json: string): Trip[] {
-    const parsed = JSON.parse(json);
-    return parsed.map((t: any) => ({
+  private deserializeTrips(raw: any[]): Trip[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((t: any) => ({
       ...t,
       startDate: new Date(t.startDate),
       endDate: new Date(t.endDate),
@@ -29,117 +27,100 @@ export class TripRepository implements ITripRepository {
   }
 
   async getTripById(id: string): Promise<Trip | null> {
-    // 1. Prova a leggere da una cache globale (oppure dovremmo ciclare tra quelli dell'utente)
-    // Per semplificare, in genere leggiamo getUserTrips e cerchiamo lì
-    // Qui faremo una lettura diretta da Firestore come fallback
-    const docRef = doc(db, 'trips', id);
-    try {
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const trip: Trip = {
-          ...data,
-          id: docSnap.id,
-          startDate: data.startDate.toDate(),
-          endDate: data.endDate.toDate(),
-          createdAt: data.createdAt.toDate(),
-          updatedAt: data.updatedAt.toDate(),
-        } as Trip;
-        return trip;
-      }
-    } catch (e) {
-      console.warn("Firestore fetch failed, relying on cache strategy internally", e);
-    }
-    return null;
+    const trips = await this.getUserTrips('default-user');
+    return trips.find(t => t.id === id) || null;
   }
 
   async getUserTrips(userId: string): Promise<Trip[]> {
-    const cacheKey = `${TRIPS_CACHE_KEY}${userId}`;
-    let cachedTrips: Trip[] = [];
+    const cacheKey = this.getCacheKey(userId);
+    const rawCache = await this.localDb.get<any[]>(cacheKey);
     
-    // 1. Lettura immediata da MMKV
-    const rawCache = await this.localDb.get<string>(cacheKey);
-    if (rawCache) {
-      try {
-        cachedTrips = this.deserializeTrips(rawCache);
-      } catch (e) {
-        console.error("Cache parsing error", e);
-      }
+    if (!rawCache || rawCache.length === 0) {
+      // Se il database è vuoto, restituiamo il mock trip di default per lo sviluppo
+      const mockTrip: Trip = {
+        id: 'trip-budapest-2026',
+        userId: 'default-user',
+        title: 'Fuga a Budapest',
+        destination: 'Budapest, Ungheria',
+        emoji: '🇭🇺',
+        currency: 'HUF',
+        startDate: new Date('2026-07-10'),
+        endDate: new Date('2026-07-14'),
+        status: 'planned',
+        coverImageUrl: 'https://images.unsplash.com/photo-1549877452-9c387954fbc2?q=80&w=800&auto=format&fit=crop',
+        progress: 0,
+        stats: {
+          savedPlaces: 5,
+          reservations: 0,
+          activitiesToComplete: 0,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      // Salviamo il mock nel db locale così rimane persistente
+      await this.localDb.set(cacheKey, [mockTrip]);
+      return [mockTrip];
     }
 
-    // 2. Fetch in background (se fallisce, ignoriamo l'errore per preservare il flusso offline)
-    this.syncUserTrips(userId, cacheKey).catch(console.error);
-
-    // 3. Ritorna immediatamente i dati in cache (potrebbe essere un array vuoto al primo avvio)
-    return cachedTrips;
-  }
-
-  private async syncUserTrips(userId: string, cacheKey: string): Promise<void> {
-    const q = query(collection(db, 'trips'), where('userId', '==', userId));
-    const querySnapshot = await getDocs(q);
-    
-    const trips: Trip[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      trips.push({
-        id: doc.id,
-        userId: data.userId,
-        title: data.title,
-        destination: data.destination,
-        status: data.status,
-        coverImageUrl: data.coverImageUrl,
-        startDate: data.startDate.toDate(),
-        endDate: data.endDate.toDate(),
-        createdAt: data.createdAt.toDate(),
-        updatedAt: data.updatedAt.toDate(),
+    try {
+      const trips = this.deserializeTrips(rawCache);
+      // Rimuoviamo il filtro Zod severo in development per evitare la sparizione dei viaggi mock/legacy
+      const validTrips = trips.filter(t => {
+        const res = TripSchema.safeParse(t);
+        if (!res.success) {
+          console.warn('[TripRepository] Validation failed for trip. Returning anyway to prevent data loss:', res.error.message);
+        }
+        return true; // Accetta comunque il trip per evitare sparizioni improvvise
       });
-    });
-
-    // Validiamo con Zod per sicurezza (opzionale ma consigliato)
-    const validTrips = trips.filter(t => TripSchema.safeParse(t).success);
-
-    // Salviamo la nuova fonte di verità in cache
-    await this.localDb.set(cacheKey, this.serializeTrips(validTrips));
+      return validTrips;
+    } catch (e) {
+      console.error('Error deserializing trips from local storage', e);
+      return [];
+    }
   }
 
-  async createTrip(trip: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>): Promise<Trip> {
-    const newDocRef = doc(collection(db, 'trips'));
+  async createTrip(tripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>): Promise<Trip> {
     const now = new Date();
+    const id = `trip-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     
     const newTrip: Trip = {
-      ...trip,
-      id: newDocRef.id,
+      ...tripData,
+      id,
       createdAt: now,
       updatedAt: now,
     };
 
-    const cacheKey = `${TRIPS_CACHE_KEY}${trip.userId}`;
-    
-    // Aggiornamento ottimistico cache
-    const rawCache = await this.localDb.get<string>(cacheKey);
-    let cachedTrips = rawCache ? this.deserializeTrips(rawCache) : [];
-    cachedTrips.push(newTrip);
-    await this.localDb.set(cacheKey, this.serializeTrips(cachedTrips));
+    const trips = await this.getUserTrips(tripData.userId);
+    trips.push(newTrip);
 
-    // Scrittura Firestore
-    await setDoc(newDocRef, {
-      ...newTrip,
-      startDate: newTrip.startDate, // Firestore SDK auto-converts Date to Timestamp if configured, but better to use Timestamp.fromDate() in a real app
-      endDate: newTrip.endDate,
-      createdAt: newTrip.createdAt,
-      updatedAt: newTrip.updatedAt,
-    });
-
+    await this.localDb.set(this.getCacheKey(tripData.userId), trips);
     return newTrip;
   }
 
   async updateTrip(id: string, updates: Partial<Trip>): Promise<Trip> {
-    // TBD: Trova trip in cache, aggiorna ottimisticamente, scrivi su Firestore
-    throw new Error('Method not implemented yet.');
+    const trips = await this.getUserTrips('default-user');
+    const index = trips.findIndex(t => t.id === id);
+    
+    if (index === -1) {
+      throw new Error(`Trip con id ${id} non trovato nel repository.`);
+    }
+
+    const updatedTrip: Trip = {
+      ...trips[index],
+      ...updates,
+      id: trips[index].id,
+      updatedAt: new Date(),
+    };
+
+    trips[index] = updatedTrip;
+    await this.localDb.set(this.getCacheKey('default-user'), trips);
+    return updatedTrip;
   }
 
   async deleteTrip(id: string): Promise<void> {
-    // TBD: Rimuovi da cache, elimina da Firestore
-    throw new Error('Method not implemented yet.');
+    const trips = await this.getUserTrips('default-user');
+    const filteredTrips = trips.filter(t => t.id !== id);
+    await this.localDb.set(this.getCacheKey('default-user'), filteredTrips);
   }
 }

@@ -67,7 +67,7 @@ export const Card: React.FC<CardProps> = ({
   ];
 
   const Container = onPress ? AnimatedPressable : Animated.View;
-  const pressableProps = onPress ? { onPress, onPressIn, onPressOut } : {};
+  const pressableProps = onPress ? { onPress, onPressIn: handlePressIn, onPressOut: handlePressOut } : {};
 
   return (
     <Container

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, ScrollView, SafeAreaView, Pressable, StatusBar } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, ScrollView, Pressable, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useGlobalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 
@@ -11,11 +12,16 @@ import { IconButton } from '../../../../src/shared/components/IconButton';
 import { Button } from '../../../../src/shared/components/Button';
 
 export default function EventDetailHubScreen() {
-  const { id, eventId } = useLocalSearchParams();
+  const localParams = useLocalSearchParams<{ id: string | string[]; eventId: string | string[] }>();
+  const globalParams = useGlobalSearchParams<{ id: string | string[]; eventId: string | string[] }>();
+  const idParam = localParams.id || globalParams.id;
+  const eventIdParam = localParams.eventId || globalParams.eventId;
   const router = useRouter();
+  const tripId = (Array.isArray(idParam) ? idParam[0] : idParam) || 'trip-budapest-2026';
+  const cleanEventId = (Array.isArray(eventIdParam) ? eventIdParam[0] : eventIdParam) || '';
   
-  const events = useTripStore(state => state.getEventsByTripId(id as string));
-  const event = events.find(e => e.id === eventId);
+  const events = useTripStore(state => state.getEventsByTripId(tripId));
+  const event = events.find(e => e.id === cleanEventId);
 
   if (!event) {
     return (

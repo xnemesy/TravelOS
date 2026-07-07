@@ -51,7 +51,7 @@ export const Button: React.FC<ButtonProps> = ({
   // Styling
   let bgClass = '';
   let borderClass = '';
-  let textColor: 'inverse' | 'primary' | 'accent' = 'primary';
+  let textColor: 'inverse' | 'primary' | 'accent' | 'secondary' = 'primary';
   let iconColor = '#000000';
 
   switch (variant) {
