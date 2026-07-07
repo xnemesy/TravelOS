@@ -2,6 +2,16 @@
 
 > Lavoro pianificato secondo le ADR esistenti, con stato di avanzamento verificato — non un piano inventato. Vedi [DECISIONS.md](DECISIONS.md) per il dettaglio di ciascuna ADR.
 
+## Priorità immediata — unificazione del modello Place
+
+Decisa il 2026-07-07, dopo che il checkpoint di sicurezza ha reso misurabile (26 errori `tsc`, vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#frammentazione-del-modello-place--ora-verificata-a-livello-di-compilatore-priorità-alta)) un costo finora solo descritto come trade-off in [DOMAIN_MODEL.md](../architecture/DOMAIN_MODEL.md). Precede Sprint 13.2: un modello frammentato rende più fragile qualunque nuovo motore costruito sopra, incluso il Domain Lifecycle watcher.
+
+**Direzione proposta, da formalizzare in un'ADR prima di scrivere codice** (coerente col trattamento riservato a scelte di modello altrettanto strutturali, es. ADR-014): una pipeline di trasformazione esplicita, con un mapper dichiarato ad ogni passaggio, invece di quattro rappresentazioni che si toccano implicitamente ai confini.
+```
+Provider → Canonical Place → JourneyPlace → PlaceRef
+```
+Non è ancora deciso quale rappresentazione diventi "canonica", né se `TravelPlace` (percorso legacy, vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#due-percorsi-di-pianificazione-paralleli--uno-vivo-uno-morto)) resti fuori da questa pipeline per sempre o venga formalmente deprecato in quella sede. Questo va deciso nell'ADR, non assunto.
+
 ## In corso / prossimo — ADR-015, Domain Lifecycle
 
 **Sprint 13.1 (pulizia Event Bus)** — ✅ Fatto (commit `9e06fac`).
