@@ -19,8 +19,11 @@ const localDb = new MMKVAdapter();
  */
 export class TimelineEngine implements ITimelineEngine {
   private timelineMap: Map<string, TimelineDaySchedule[]> = new Map();
+  private contextEngine: IContextEngine;
 
   constructor(contextEngine: IContextEngine) {
+    this.contextEngine = contextEngine;
+
     // Registra la propria slice di stato nel Context Engine per la composizione reattiva
     contextEngine.registerStatePublisher('TimelineEngine', (tripId: string) =>
       this.publishStateSlice(tripId)
@@ -64,14 +67,13 @@ export class TimelineEngine implements ITimelineEngine {
         newTimeline[i] = TimelineGenerator.generateDaySchedule(day.dayNumber, day.date, updatedPlaces);
         this.timelineMap.set(cleanTripId, newTimeline);
         await localDb.set(`timeline_${cleanTripId}`, newTimeline);
-        eventBus.publish({
-          id: `evt-${Date.now()}`,
-          type: 'TimelineReordered',
-          timestamp: new Date().toISOString(),
-          tripId: cleanTripId,
-          payload: { dayNumber: 1, orderedPlaceIds: [] },
-        });
+        modified = true;
       }
+    }
+    // Nessun nuovo Domain Fact: PlacesEngine ha già annunciato PlaceVisited.
+    // Qui aggiorniamo solo la nostra cache interna e ricomponiamo direttamente il Context.
+    if (modified) {
+      this.contextEngine.recompose(cleanTripId);
     }
   }
 
@@ -88,14 +90,12 @@ export class TimelineEngine implements ITimelineEngine {
         newTimeline[i] = TimelineGenerator.generateDaySchedule(day.dayNumber, day.date, updatedPlaces);
         this.timelineMap.set(cleanTripId, newTimeline);
         await localDb.set(`timeline_${cleanTripId}`, newTimeline);
-        eventBus.publish({
-          id: `evt-${Date.now()}`,
-          type: 'TimelineReordered',
-          timestamp: new Date().toISOString(),
-          tripId: cleanTripId,
-          payload: { dayNumber: 1, orderedPlaceIds: [] },
-        });
+        modified = true;
       }
+    }
+    // Nessun nuovo Domain Fact: PlacesEngine ha già annunciato PlaceNotesUpdated.
+    if (modified) {
+      this.contextEngine.recompose(cleanTripId);
     }
   }
 
@@ -165,7 +165,7 @@ export class TimelineEngine implements ITimelineEngine {
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
-        type: 'TimelineReordered',
+        type: 'TimelinePlaceAdded',
         timestamp: new Date().toISOString(),
         tripId: cleanTripId,
         payload: {
@@ -198,7 +198,7 @@ export class TimelineEngine implements ITimelineEngine {
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
-        type: 'TimelineReordered',
+        type: 'TimelinePlaceRemoved',
         timestamp: new Date().toISOString(),
         tripId: cleanTripId,
         payload: {
@@ -214,14 +214,11 @@ export class TimelineEngine implements ITimelineEngine {
     const cleanPlaceId = Array.isArray(placeId) ? placeId[0] : String(placeId || '');
     const timeline = await this.getTripTimeline(cleanTripId);
 
-    console.log(`[TimelineEngine] removePlaceFromAllDays: cleanPlaceId = ${cleanPlaceId}`);
-
     let modified = false;
     const newTimeline = [...timeline];
 
     for (let i = 0; i < newTimeline.length; i++) {
       const day = newTimeline[i];
-      console.log(`[TimelineEngine] Day ${day.dayNumber} places:`, day.places.map(p => p.id));
       if (day.places.some(p => p.id === cleanPlaceId)) {
         const updatedPlaces = day.places.filter(p => p.id !== cleanPlaceId);
         newTimeline[i] = TimelineGenerator.generateDaySchedule(
@@ -230,7 +227,6 @@ export class TimelineEngine implements ITimelineEngine {
           updatedPlaces
         );
         modified = true;
-        console.log(`[TimelineEngine] Day ${day.dayNumber} modified. New places:`, updatedPlaces.map(p => p.id));
       }
     }
 
@@ -238,19 +234,8 @@ export class TimelineEngine implements ITimelineEngine {
       this.timelineMap.set(cleanTripId, newTimeline);
       await localDb.set(`timeline_${cleanTripId}`, newTimeline);
 
-      eventBus.publish({
-        id: `evt-${Date.now()}`,
-        type: 'TimelineReordered',
-        timestamp: new Date().toISOString(),
-        tripId: cleanTripId,
-        payload: {
-          dayNumber: 1,
-          orderedPlaceIds: [],
-        },
-      });
-      console.log(`[TimelineEngine] Timeline updated in DB and TimelineReordered published.`);
-    } else {
-      console.log(`[TimelineEngine] No matching place found in timeline to remove.`);
+      // Nessun nuovo Domain Fact: PlacesEngine ha già annunciato PlaceRemoved.
+      this.contextEngine.recompose(cleanTripId);
     }
   }
 
@@ -281,7 +266,7 @@ export class TimelineEngine implements ITimelineEngine {
 
         eventBus.publish({
           id: `evt-${Date.now()}`,
-          type: 'TimelineReordered',
+          type: 'TimelineSlotFilled',
           timestamp: new Date().toISOString(),
           tripId: cleanTripId,
           payload: {
@@ -350,12 +335,18 @@ export class TimelineEngine implements ITimelineEngine {
     this.timelineMap.set(cleanTripId, newTimeline);
     await localDb.set(`timeline_${cleanTripId}`, newTimeline);
 
+    // Payload reale: gli id dei luoghi effettivamente distribuiti (prima era un placeholder vuoto).
+    // dayNumber è il primo giorno della timeline come ancora rappresentativa, perché l'auto-schedule
+    // può toccare più giorni contemporaneamente: il payload non descrive un singolo giorno.
     eventBus.publish({
       id: `evt-${Date.now()}`,
-      type: 'TimelineReordered',
+      type: 'TimelineAutoScheduled',
       timestamp: new Date().toISOString(),
       tripId: cleanTripId,
-      payload: { dayNumber: 1, orderedPlaceIds: [] }, // Dispara evento generico di ricalcolo
+      payload: {
+        dayNumber: newTimeline[0]?.dayNumber ?? 1,
+        orderedPlaceIds: unassignedPlaces.map((p) => p.id),
+      },
     });
   }
 
@@ -373,7 +364,7 @@ export class TimelineEngine implements ITimelineEngine {
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
-        type: 'TimelineReordered',
+        type: 'TimelineOptimized',
         timestamp: new Date().toISOString(),
         tripId: cleanTripId,
         payload: {
@@ -418,7 +409,7 @@ export class TimelineEngine implements ITimelineEngine {
 
     eventBus.publish({
       id: `evt-${Date.now()}`,
-      type: 'TimelineReordered',
+      type: 'TimelineGenerated',
       timestamp: new Date().toISOString(),
       tripId: cleanTripId,
       payload: {

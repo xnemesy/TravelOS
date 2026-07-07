@@ -13,6 +13,12 @@ export type DomainFactType =
   | 'PlaceRemoved'
   | 'PlaceNotesUpdated'
   | 'TimelineReordered'
+  | 'TimelinePlaceAdded'
+  | 'TimelinePlaceRemoved'
+  | 'TimelineSlotFilled'
+  | 'TimelineOptimized'
+  | 'TimelineGenerated'
+  | 'TimelineAutoScheduled'
   | 'TripStarted'
   | 'TripCompleted'
   | 'ExpenseAdded'
@@ -38,13 +44,19 @@ export interface PlaceSavedPayload {
 
 export interface PlaceVisitedPayload {
   placeId: string;
+  isVisited: boolean;
   visitedAt: string; // ISO 8601
 }
 
-export interface TimelineReorderedPayload {
+// Payload condiviso da tutti i fatti Timeline* che descrivono lo stato di una giornata
+// dopo la modifica (aggiunta, rimozione, riordino, ottimizzazione, generazione, auto-schedule).
+export interface TimelineChangePayload {
   dayNumber: number;
   orderedPlaceIds: string[];
 }
+
+/** @deprecated Alias di compatibilità: usa TimelineChangePayload. */
+export type TimelineReorderedPayload = TimelineChangePayload;
 
 export interface ExpenseAddedPayload {
   expenseId: string;

@@ -143,36 +143,37 @@ export const useTripStore = create<TripState>((set, get) => ({
   }
 }));
 
-// Reattività Real-time: Ascolta l'Event Bus di dominio per aggiornare statistiche e progresso viaggio al variare dei luoghi o della timeline
+// Reattività Real-time: Ascolta l'Event Bus di dominio per aggiornare statistiche e progresso viaggio.
+// Reagisce a QUALSIASI fatto di dominio associato a un trip, non a una whitelist di nomi:
+// altrimenti ogni nuovo DomainFactType richiederebbe di ricordarsi di aggiornare questo filtro.
 eventBus.subscribe('*', async (event) => {
-  if (event.type === 'PlaceSaved' || event.type === 'PlaceRemoved' || event.type === 'TimelineReordered') {
-    const tripId = event.tripId;
-    try {
-      const places = await placesEngine.getSavedPlaces(tripId);
-      const savedPlacesCount = places.length;
+  if (!event.tripId) return;
+  const tripId = event.tripId;
+  try {
+    const places = await placesEngine.getSavedPlaces(tripId);
+    const savedPlacesCount = places.length;
 
-      // Progresso allineato al Journey Score 2.0 calcolato dal Context Engine
-      const context = contextEngine.getContext(tripId);
-      const planProgress = context.journeyScore;
-      const organizedDaysCount = context.timeline?.days?.filter(d => d.places?.length > 0).length || 0;
+    // Progresso allineato al Journey Score 2.0 calcolato dal Context Engine
+    const context = contextEngine.getContext(tripId);
+    const planProgress = context.journeyScore;
+    const organizedDaysCount = context.timeline?.days?.filter(d => d.places?.length > 0).length || 0;
 
-      const store = useTripStore.getState();
-      const trip = store.getTripById(tripId);
-      if (trip) {
-        await store.updateTrip(tripId, {
-          progress: planProgress,
-          stats: {
-            ...trip.stats,
-            savedPlaces: savedPlacesCount,
-            organizedDays: organizedDaysCount,
-          }
-        });
-      }
-    } catch (error) {
-      // Ignora errori di aggiornamento su trip mock/non presenti nel repository locale
-      if (process.env.NODE_ENV === 'development') {
-        // console.debug('[trip.store] Aggiornamento ignorato per trip assente/mock:', tripId);
-      }
+    const store = useTripStore.getState();
+    const trip = store.getTripById(tripId);
+    if (trip) {
+      await store.updateTrip(tripId, {
+        progress: planProgress,
+        stats: {
+          ...trip.stats,
+          savedPlaces: savedPlacesCount,
+          organizedDays: organizedDaysCount,
+        }
+      });
+    }
+  } catch (error) {
+    // Ignora errori di aggiornamento su trip mock/non presenti nel repository locale
+    if (process.env.NODE_ENV === 'development') {
+      // console.debug('[trip.store] Aggiornamento ignorato per trip assente/mock:', tripId);
     }
   }
 });

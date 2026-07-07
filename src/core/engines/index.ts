@@ -1,7 +1,6 @@
 import { ContextEngine } from './context/context.engine';
 import { PlacesEngine } from './places/places.engine';
 import { TimelineEngine } from './timeline/timeline.engine';
-import { eventBus } from '../events/event-bus';
 
 /**
  * ============================================================================
@@ -34,14 +33,8 @@ export async function hydrateContext(tripId: string) {
   await placesEngine.getSavedPlaces(cleanTripId);
   await timelineEngine.getTripTimeline(cleanTripId);
 
-  // Emette un evento fittizio per forzare il ricalcolo del ContextEngine
-  eventBus.publish({
-    id: `evt-hydrate-${Date.now()}`,
-    type: 'PlaceSaved', // Evento valido per triggerare il ricalcolo
-    timestamp: new Date().toISOString(),
-    tripId: cleanTripId,
-    payload: { placeId: 'hydrate' } as any,
-  });
+  // Nessun Domain Fact: l'idratazione non è un evento di dominio, è ricomposizione diretta.
+  contextEngine.recompose(cleanTripId);
 }
 
 // Re-export dei tipi core
