@@ -49,3 +49,11 @@ Il `ContextEngine` ricompone `TravelContext` interamente in memoria e in modo si
 I Domain Service non chiamano `Date.now()` o `Math.random()` (eccetto nell'orchestrazione esplicitamente non testata, come la scelta random del `theme` in `JourneyComposer.generateDayTheme` — un'eccezione nota, non un principio violato). Il Traveler DNA (ADR-014) è vincolato a essere ricostruibile per replay dal solo log di eventi. Vedi [TESTING_STRATEGY.md](../architecture/TESTING_STRATEGY.md).
 
 **Come si applica**: se una funzione deve essere testata con input→output esatto, non deve dipendere dall'orologio di sistema o da un generatore casuale.
+
+## 9. Decisione ≠ attivazione
+
+Un'ADR già accettata nel merito non si riscrive quando arriva il momento di implementarla — si attiva. ADR-015 lo dimostra già: il suo Sprint 13.1 (pulizia Event Bus) è stato implementato nel commit `9e06fac` senza mai riaprire il documento, e `DECISIONS.md` lo registra come "parzialmente eseguito", non come una nuova decisione. Lo stesso principio, reso esplicito per la prima volta il 2026-07-08 in [CURRENT_ROADMAP.md](../context/CURRENT_ROADMAP.md), evita un'ADR-018 ridondante per l'implementazione di ADR-014 (Traveler DNA): il design resta quello già scritto, gli sprint 16-19 lo eseguono in fasi, senza ridiscuterlo.
+
+Corollario: quando un'ADR contiene attività di natura diversa sotto lo stesso documento (es. ADR-014 mescola "registrare fatti" e "interpretarli"), la roadmap può sequenziarle in sprint separati — anche a distanza — senza che questo implichi scindere l'ADR in due decisioni. Vale in particolare per la cattura di dati comportamentali: la storia di un utente non è ricostruibile retroattivamente, quindi la cattura (Sprint 16) va anticipata rispetto all'intelligenza che la userà (Sprint 17), anche se l'intelligenza resta lontana nel tempo.
+
+**Come si applica**: prima di aprire una nuova ADR, verificare se la decisione è già coperta da un documento esistente ancora valido nel merito — se lo è, il lavoro che segue è uno sprint di attivazione, non un nuovo numero ADR. Una nuova ADR si apre solo per una decisione non ancora presa, non per la sua implementazione differita.

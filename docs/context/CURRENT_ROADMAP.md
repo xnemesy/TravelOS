@@ -2,33 +2,60 @@
 
 > Lavoro pianificato secondo le ADR esistenti, con stato di avanzamento verificato — non un piano inventato. Vedi [DECISIONS.md](DECISIONS.md) per il dettaglio di ciascuna ADR.
 
-## Priorità immediata — unificazione del modello Place
+## Roadmap di sprint — decisioni vs. attivazione
 
-Decisa il 2026-07-07, dopo che il checkpoint di sicurezza ha reso misurabile (26 errori `tsc`, vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#frammentazione-del-modello-place--ora-verificata-a-livello-di-compilatore-priorità-alta)) un costo finora solo descritto come trade-off in [DOMAIN_MODEL.md](../architecture/DOMAIN_MODEL.md). Precede Sprint 13.2: un modello frammentato rende più fragile qualunque nuovo motore costruito sopra, incluso il Domain Lifecycle watcher.
+Principio guida (dal 2026-07-08): una decisione già presa in un'ADR **non si riscrive** al momento dell'implementazione — si **attiva**. Questo tiene pulita la storia delle decisioni: un'ADR resta la registrazione di un momento di scelta, uno sprint è l'esecuzione di quella scelta. Non si apre una nuova ADR solo perché un'ADR esistente, già accettata nel merito, sta per essere finalmente implementata (vedi anche come `DECISIONS.md` tratta ADR-015/Sprint 13.1: implementato senza riaprire il documento).
 
-**Direzione proposta, da formalizzare in un'ADR prima di scrivere codice** (coerente col trattamento riservato a scelte di modello altrettanto strutturali, es. ADR-014): una pipeline di trasformazione esplicita, con un mapper dichiarato ad ogni passaggio, invece di quattro rappresentazioni che si toccano implicitamente ai confini.
-```
-Provider → Canonical Place → JourneyPlace → PlaceRef
-```
-Non è ancora deciso quale rappresentazione diventi "canonica", né se `TravelPlace` (percorso legacy, vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#due-percorsi-di-pianificazione-paralleli--uno-vivo-uno-morto)) resti fuori da questa pipeline per sempre o venga formalmente deprecato in quella sede. Questo va deciso nell'ADR, non assunto.
+| Sprint | Cosa | ADR di riferimento | Stato |
+|---|---|---|---|
+| 13.1 | Pulizia Event Bus (eventi fittizi, taxonomy granulare) | ADR-015 | ✅ Fatto (commit `9e06fac`) |
+| **14** | **Implementare ADR-017** — pipeline `PlaceMetadata → TravelPlace → PlaceRef`, piano di migrazione a 17 passi | ADR-017 | Non iniziato — prossimo in coda |
+| 15 | Domain Lifecycle (13.2) + User Signals (13.3) — dettaglio sotto | ADR-015 | Non iniziato — dopo Sprint 14 |
+| 16 | **Attivare ADR-014, Fase A — Memory Capture**. Event Bus → log episodico, zero interpretazione | ADR-014 | Non iniziato — dopo Sprint 15 |
+| 17 | **Attivare ADR-014, Fase B — Memory Intelligence**. Decay, TasteProfile, clustering, Traveler DNA | ADR-014 | Non iniziato — dopo Sprint 16 |
+| 18 | Context Assembly — il DNA entra in `TravelContext` come segnale che `JourneyComposer` può leggere | ADR-014 (Fase 3, parziale) | Non iniziato — dopo Sprint 17 |
+| 19 | AI Concierge — verbalizza il DNA/contesto assemblato | **Nessuna ADR ancora** — territorio scoperto, vedi nota sotto | Non iniziato — richiede un'ADR dedicata prima di partire |
 
-## In corso / prossimo — ADR-015, Domain Lifecycle
+**Perché Sprint 15 sta prima di Sprint 16/17, e non dopo**: Sprint 13.2 (Domain Lifecycle) non blocca la Fase A (sola cattura, nessuna interpretazione), ma blocca la Fase B — senza un momento discreto "il viaggio è finito" il DNA non ha mai un punto in cui applicare il decay temporale. Tenerlo prima invece che dopo evita di dover riaprire la sequenza quando si arriverà a quella fase.
 
-**Sprint 13.1 (pulizia Event Bus)** — ✅ Fatto (commit `9e06fac`).
+**Perché Fase A (cattura) è separata da Fase B (intelligenza) invece di restare un blocco unico**: ADR-014 descrive due attività di natura diversa sotto lo stesso documento — registrare fatti (Event Bus → log episodico, zero interpretazione) e interpretarli (decay, clustering, TasteProfile). Solo la seconda dipende da Sprint 15. Anticipare la cattura (Sprint 16) indipendentemente dall'intelligenza (Sprint 17) ha un motivo che non è di sequencing tecnico ma di dominio: **la storia comportamentale di un viaggiatore non è ricostruibile retroattivamente** — chi inizia a registrare eventi oggi ha sei mesi di storia tra sei mesi; chi aspetta l'intelligenza pronta prima di iniziare a registrare parte da zero quel giorno. Questa separazione non riscrive ADR-014 (che resta un solo documento di decisione): è solo come la roadmap sequenzia la sua esecuzione.
 
-**Sprint 13.2 — Domain Lifecycle** (non iniziato): un watcher fire-once che confronti lo stato derivato del Trip (`TripCalculator.getTripStatus`, oggi puramente calcolato ad ogni render) con l'ultimo stato persistito noto, e pubblichi `TripStarted`/`TripCompleted` solo alla prima transizione osservata. Decisione di design ancora aperta: se l'app non viene aperta durante l'intero arco del viaggio, il watcher deve emettere entrambi i fatti in sequenza o saltare direttamente a `completed`? Questo sprint è un **prerequisito reale** per il consolidamento del Traveler DNA (ADR-014) — senza un momento discreto "il viaggio è finito", il DNA non ha mai un punto in cui applicare il decay temporale.
+## Sprint 14 — Implementare ADR-017 (Unified Place Model)
 
-**Sprint 13.3 — User Signals** (non iniziato): azione di scrittura + UI minima per il rating personale (`personalRating`, oggi solo schema Zod senza write path) → evento `PlaceRated`. Estensioni naturali della stessa categoria: preferiti, feedback espliciti.
+Deciso in [ADR-017](../adr/017-unificazione-modello-place.md) (2026-07-08), dopo che il checkpoint di sicurezza aveva reso misurabile (26 errori `tsc`, vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#frammentazione-del-modello-place--ora-verificata-a-livello-di-compilatore-priorità-alta)) un costo finora solo descritto come trade-off in [DOMAIN_MODEL.md](../architecture/DOMAIN_MODEL.md). La decisione è chiusa: pipeline a tre stadi `PlaceMetadata → TravelPlace → PlaceRef` (non quattro — `JourneyPlace` eliminato, confermato codice morto), `TravelPlace` eletto Canonical Place, piano di migrazione a 17 passi ordinato per mantenere il progetto compilabile. Questo sprint esegue quel piano — non ridiscute la pipeline.
 
-## Traveler DNA — ADR-014, fasato
+## Sprint 15 — ADR-015, Domain Lifecycle e User Signals
 
-Non iniziato. Rollout proposto, in ordine:
-- **Fase 0 — Sola cattura**: `SignalExtractor` + log episodico append-only. Nessun profilo esposto, nessuna UI. È la parte con senso di avviare per prima indipendentemente dal resto, perché la storia comportamentale di un viaggiatore non è ricostruibile retroattivamente.
-- **Fase 1 — TasteProfile** derivato + slice `travelerDNA` in `TravelContext`.
-- **Fase 2 — ProceduralProfile** + evento `TravelerInsightDetected`.
-- **Fase 3 — Consumo**: `JourneyComposer` legge il DNA come segnale opzionale; un `TasteProfileNarrator` + AI Concierge lo verbalizzano.
+**Sprint 13.2 — Domain Lifecycle** (non iniziato): un watcher fire-once che confronti lo stato derivato del Trip (`TripCalculator.getTripStatus`, oggi puramente calcolato ad ogni render) con l'ultimo stato persistito noto, e pubblichi `TripStarted`/`TripCompleted` solo alla prima transizione osservata. Decisione di design ancora aperta: se l'app non viene aperta durante l'intero arco del viaggio, il watcher deve emettere entrambi i fatti in sequenza o saltare direttamente a `completed`?
 
-**Prerequisito bloccante non ancora risolto**: `UserContext` (risoluzione reale `tripId → userId`) — vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#resolver-userid-hardcoded).
+**Sprint 13.3 — User Signals** (non iniziato): azione di scrittura + UI minima per il rating personale (`personalRating`, oggi solo schema Zod senza write path) → evento `PlaceRated`. Estensioni naturali della stessa categoria: preferiti, feedback espliciti. Con ADR-017 implementato, questo write path scrive sul livello `personal` di `TravelPlace` (§3.2/§5.7 di ADR-017), non più su un `PlaceRef` mutato in memoria.
+
+## Sprint 16 — Attivare ADR-014, Fase A: Memory Capture
+
+Corrisponde alla "Fase 0 — Sola cattura" già descritta in ADR-014: `SignalExtractor` + log episodico append-only, alimentato dall'Event Bus (`PlaceVisited`, `PlaceRated`, `PlaceNotesUpdated`, `TripStarted`/`TripCompleted` da Sprint 15, `TimeSpent`, ecc.). **Zero interpretazione**: nessun profilo esposto, nessuna UI, nessun calcolo derivato. Con ADR-017 implementato, la fonte di osservazione per i segnali legati a un luogo è `TravelPlace` (letto in sola lettura, vedi ADR-017 §3.6/§4/§8) — prima di ADR-017 questa fonte non era univoca.
+
+Non ridiscute il design di ADR-014 — lo esegue, e solo per la sua metà "cattura".
+
+## Sprint 17 — Attivare ADR-014, Fase B: Memory Intelligence
+
+Corrisponde a "Fase 1 — TasteProfile" e "Fase 2 — ProceduralProfile" di ADR-014: qui nasce il Traveler DNA vero e proprio.
+- **TasteProfile** derivato dal log episodico (Sprint 16) + slice `travelerDNA` in `TravelContext`.
+- **ProceduralProfile** (abitudini di viaggio) + evento `TravelerInsightDetected`.
+- Decay temporale, clustering di preferenze — dipende da Sprint 15 (Domain Lifecycle) per il momento discreto "il viaggio è finito" su cui applicare il decay.
+
+Non può iniziare prima che Sprint 16 abbia accumulato storia reale da interpretare — è la ragione stessa per cui le due fasi sono sprint separati e non un blocco unico.
+
+## Sprint 18 — Context Assembly
+
+Prima metà di "Fase 3 — Consumo" di ADR-014: il Traveler DNA (Sprint 17) entra in `TravelContext` come segnale che `JourneyComposer` può leggere opzionalmente durante la composizione greedy di una giornata. Nessuna verbalizzazione ancora — solo assemblaggio strutturato del contesto.
+
+## Sprint 19 — AI Concierge
+
+Seconda metà di "Fase 3 — Consumo" di ADR-014: un `TasteProfileNarrator` + un AI Concierge verbalizzano il contesto assemblato in Sprint 18. **A differenza degli sprint precedenti, questo non è la semplice attivazione di una decisione già presa**: nessuna ADR oggi descrive scope, vincoli, o design dell'AI Concierge — solo menzioni aspirazionali in `DOMAIN_TERMS.md`/`AI_ARCHITECTURE.md`. Prima di questo sprint serve un'ADR dedicata (stile ADR-014), non un'estensione implicita di ADR-014 — l'AI Concierge è un consumer del Traveler DNA, non parte della sua decisione di modello.
+
+## Prerequisito trasversale — `UserContext`
+
+`UserContext` (risoluzione reale `tripId → userId`, oggi hardcoded su un utente di default) blocca Sprint 16 in avanti — vedi [KNOWN_DEBT.md](KNOWN_DEBT.md#resolver-userid-hardcoded). Indipendente da Sprint 14/15.
 
 ## Motori Fase 2/3 — solo interfacce oggi
 
