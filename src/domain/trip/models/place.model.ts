@@ -90,14 +90,12 @@ export const TravelPlaceSchema = z.object({
 
   // 1. External Layer (Dati esterni / provider per uso offline)
   baseData: ExternalPlaceSchema,
-  external: ExternalPlaceSchema.optional(), // Alias esplicito per 3-layer architecture
-  
+
   // 2. Editorial Layer (Guida e consigli curati da Travel OS)
   editorial: EditorialPlaceSchema.optional(),
-  
+
   // 3. Personal Layer (Diario, note e ricordi personali utente)
   memories: PlaceMemoriesSchema.optional(),
-  personal: PlaceMemoriesSchema.optional(), // Alias esplicito per 3-layer architecture
   notes: z.array(PlaceNoteSchema).optional(),
   
   // Informazioni pratiche retrocompatibili

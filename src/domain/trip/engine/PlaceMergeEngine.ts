@@ -1,4 +1,4 @@
-import { TravelPlace, ExternalPlace } from '../models/place.model';
+import { TravelPlace, TravelPlaceSchema, ExternalPlace, EditorialPlace } from '../models/place.model';
 import { PlaceMetadata } from '../../providers/travel-providers.types';
 
 /**
@@ -128,34 +128,44 @@ export class PlaceMergeEngine {
   }
 
   /**
+   * Normalizza un `PlaceMetadata` (dato grezzo di provider, SIP) nella forma
+   * `ExternalPlace` usata dal livello External di `TravelPlace`. Estratta da
+   * `mergePlace` per essere condivisa anche da `mergeFromProvider` (ramo di
+   * creazione) senza duplicare la logica di normalizzazione in due punti.
+   */
+  private static externalFromMetadata(meta: PlaceMetadata): ExternalPlace {
+    return {
+      providerId: meta.placeId,
+      name: meta.name,
+      category: meta.category as any,
+      coverImageUrl: meta.coverImageUrl || meta.photoUrls?.[0],
+      photoUrls: meta.photoUrls,
+      matchScore: meta.matchScore || 100,
+      location: {
+        address: meta.formattedAddress,
+        coordinates: { lat: meta.lat, lng: meta.lon },
+        appleMapsUrl: meta.appleMapsUrl || `https://maps.apple.com/?q=${meta.lat},${meta.lon}`,
+        googleMapsUrl: meta.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${meta.lat},${meta.lon}`,
+      },
+      contact: {
+        phone: meta.phone,
+        website: meta.website,
+      },
+      openingHours: meta.openingHours,
+      rating: meta.rating,
+      reviewsCount: meta.reviewsCount,
+    };
+  }
+
+  /**
    * Unifica i dati di un provider esterno in un luogo editoriale/esistente,
    * preservando intatti i livelli Editorial e Personal e tracciando l'origine unificata.
    */
   public static mergePlace(existing: TravelPlace, providerData: ExternalPlace | PlaceMetadata): TravelPlace {
     const isMetadata = 'placeId' in providerData && !('providerId' in providerData);
-    
+
     const ext: ExternalPlace = isMetadata
-      ? {
-          providerId: (providerData as PlaceMetadata).placeId,
-          name: providerData.name,
-          category: (providerData as PlaceMetadata).category as any,
-          coverImageUrl: (providerData as PlaceMetadata).coverImageUrl || (providerData as PlaceMetadata).photoUrls?.[0],
-          photoUrls: (providerData as PlaceMetadata).photoUrls,
-          matchScore: (providerData as PlaceMetadata).matchScore || 100,
-          location: {
-            address: (providerData as PlaceMetadata).formattedAddress,
-            coordinates: { lat: providerData.lat, lng: providerData.lon },
-            appleMapsUrl: (providerData as PlaceMetadata).appleMapsUrl || `https://maps.apple.com/?q=${providerData.lat},${providerData.lon}`,
-            googleMapsUrl: (providerData as PlaceMetadata).googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${providerData.lat},${providerData.lon}`,
-          },
-          contact: {
-            phone: (providerData as PlaceMetadata).phone,
-            website: (providerData as PlaceMetadata).website,
-          },
-          openingHours: (providerData as PlaceMetadata).openingHours,
-          rating: (providerData as PlaceMetadata).rating,
-          reviewsCount: (providerData as PlaceMetadata).reviewsCount,
-        }
+      ? this.externalFromMetadata(providerData as PlaceMetadata)
       : (providerData as ExternalPlace);
 
     // Fusione selettiva: aggiorniamo il livello External senza mai toccare Editorial o Personal
@@ -182,7 +192,6 @@ export class PlaceMergeEngine {
       ...existing,
       externalProviderId: ext.providerId || existing.externalProviderId,
       baseData: mergedBaseData,
-      external: mergedBaseData,
       source: {
         provider: 'merged',
         providerName: 'mock-real',
@@ -190,5 +199,92 @@ export class PlaceMergeEngine {
       },
       updatedAt: new Date(),
     };
+  }
+
+  /**
+   * Punto unico di conversione da dato provider a `TravelPlace` (ADR-017,
+   * pipeline `PlaceMetadata → TravelPlace → PlaceRef`).
+   *
+   * - Se `options.existing` è presente, delega a `mergePlace` (nessuna
+   *   duplicazione di logica di fusione: `PlaceMetadata` soddisfa già la
+   *   union accettata da `mergePlace`) — dopo aver verificato che
+   *   `existing.tripId` corrisponda a `options.tripId`: un mismatch
+   *   significa che il chiamante ha passato un `tripId` sbagliato, e
+   *   aggiornare silenziosamente il trip sbagliato sarebbe un difetto,
+   *   non un dato da preservare (stessa filosofia della validazione Zod
+   *   sotto: fallire rumorosamente su un errore del chiamante).
+   * - Se `options.existing` è assente/null, costruisce un `TravelPlace`
+   *   nuovo dal solo livello External — Editorial/Personal non vengono mai
+   *   popolati da dati provider (coerente con ADR-017 §3.2). L'`id` del
+   *   nuovo `TravelPlace` è generato indipendentemente da
+   *   `incoming.placeId`, con la stessa convenzione già in uso in
+   *   `TripRepository.createTrip` (`${prefix}-${Date.now()}-${random}`,
+   *   vedi `trip.repository.ts`) — non va mai fatto coincidere con
+   *   `externalProviderId`: sono due identità diverse per costruzione
+   *   (`externalProviderId` esiste apposta per riferire il provider senza
+   *   che `id` ne dipenda, vedi commento sul campo in `place.model.ts`).
+   *   Farli coincidere romperebbe silenziosamente `InMemoryPlaceRepository`
+   *   (`place.repository.ts`), che tiene un'unica `Map` globale chiavata
+   *   su `id` per tutti i trip: lo stesso luogo fisico salvato in due trip
+   *   diversi produrrebbe due `TravelPlace` con lo stesso `id`, e il
+   *   secondo salvataggio sovrascriverebbe silenziosamente il primo.
+   *
+   * **Limite noto e non ancora risolto**: questa funzione accetta solo
+   * `PlaceMetadata` come `incoming`. Il catalogo editoriale
+   * (`EditorialPlaceItem.baseData`, vedi `editorial-places.catalog.ts`) è
+   * tipizzato `ExternalPlace`, non `PlaceMetadata` — la forma non
+   * corrisponde. Collegare il catalogo editoriale come "secondo produttore
+   * legittimo" (ADR-017 §3.5) richiederà quindi un passaggio di
+   * conversione aggiuntivo (o una firma diversa), non solo passare
+   * `options.editorial`: quell'opzione copre solo dove va il contenuto
+   * curato, non la forma del dato in ingresso. Non risolto in questa fase.
+   *
+   * Strategia di errore: `throw`, non `safeParse` con fallback silenzioso
+   * come fa `TripRepository` per i dati persistiti/legacy (vedi
+   * trip.repository.ts — lì un Trip invalido viene comunque ritornato "per
+   * non perdere dati": è un dato esterno imperfetto, meglio degradare che
+   * bloccare). Qui il `TravelPlace` è costruito da zero da questo stesso
+   * modulo: uno scarto dallo schema significa un difetto nel mapper, non un
+   * dato imperfetto da preservare — fallire rumorosamente è la scelta
+   * corretta, non c'è alcun dato utente in gioco da salvare a ogni costo.
+   */
+  public static mergeFromProvider(
+    incoming: PlaceMetadata,
+    options: { tripId: string; existing?: TravelPlace | null; editorial?: EditorialPlace }
+  ): TravelPlace {
+    const { tripId, existing = null, editorial } = options;
+
+    if (existing) {
+      if (existing.tripId !== tripId) {
+        throw new Error(
+          `PlaceMergeEngine.mergeFromProvider: tripId incoerente — options.tripId='${tripId}' ma existing.tripId='${existing.tripId}'.`
+        );
+      }
+      return this.mergePlace(existing, incoming);
+    }
+
+    const ext = this.externalFromMetadata(incoming);
+    const now = new Date();
+
+    const candidate = {
+      id: `place-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      tripId,
+      externalProviderId: ext.providerId,
+      source: {
+        provider: 'provider' as const,
+        providerName: 'mock-real' as const,
+        lastSyncAt: now,
+      },
+      baseData: ext,
+      editorial,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = TravelPlaceSchema.safeParse(candidate);
+    if (!result.success) {
+      throw new Error(`PlaceMergeEngine.mergeFromProvider: TravelPlace costruito non valido — ${result.error.message}`);
+    }
+    return result.data;
   }
 }
