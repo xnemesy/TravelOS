@@ -1,5 +1,5 @@
 import { PlaceMergeEngine } from './PlaceMergeEngine';
-import { TravelPlace } from '../models/place.model';
+import { TravelPlace, ExternalPlace } from '../models/place.model';
 import { PlaceMetadata } from '../../providers/travel-providers.types';
 
 describe('PlaceMergeEngine.calculateDistanceMeters', () => {
@@ -184,5 +184,78 @@ describe('PlaceMergeEngine.mergeFromProvider', () => {
       editorial: { whyVisit: 'Getta una moneta per tornare a Roma' },
     });
     expect(place.editorial?.whyVisit).toBe('Getta una moneta per tornare a Roma');
+  });
+
+  // Sprint 14 Fase 2 (fix issue bloccante review indipendente): il catalogo
+  // editoriale produce ExternalPlace, non PlaceMetadata — mergeFromProvider
+  // deve accettare entrambe le forme senza duplicare la normalizzazione.
+  it('accetta anche un ExternalPlace diretto (es. EditorialPlaceItem.baseData), non solo PlaceMetadata', () => {
+    const incomingExternal: ExternalPlace = {
+      providerId: 'edit-bud-parlamento',
+      name: 'Parlamento di Budapest',
+      category: 'landmark',
+      coverImageUrl: 'https://example.com/parlamento.jpg',
+      location: { address: 'Kossuth Lajos tér 1-3', coordinates: { lat: 47.5071, lng: 19.0456 } },
+      rating: 4.9,
+    };
+
+    const place = PlaceMergeEngine.mergeFromProvider(incomingExternal, { tripId: 'trip-9' });
+
+    expect(place.baseData.name).toBe('Parlamento di Budapest');
+    expect(place.baseData.location?.coordinates).toEqual({ lat: 47.5071, lng: 19.0456 });
+    expect(place.externalProviderId).toBe('edit-bud-parlamento');
+    expect(place.id).not.toBe('edit-bud-parlamento');
+  });
+
+  // Sprint 15 (bug trovato in produzione, prima esecuzione reale su dispositivo):
+  // real-places.adapter.ts/mock-travel.providers.ts emettono categorie libere
+  // ('attraction', 'food', 'cultural', 'nightlife') mai validate contro
+  // PlaceCategorySchema — il cast cieco precedente (`as any`) le lasciava
+  // passare fino alla validazione Zod di mergeFromProvider, che falliva per
+  // 'attraction' (il valore più comune del dataset curato).
+  describe('normalizzazione categoria provider (regressione bug produzione)', () => {
+    it.each([
+      ['attraction', 'landmark'],
+      ['food', 'restaurant'],
+      ['cultural', 'museum'],
+      ['nightlife', 'bar'],
+    ])('mappa la categoria provider "%s" su "%s" invece di fallire la validazione', (providerCategory, expected) => {
+      const place = PlaceMergeEngine.mergeFromProvider(
+        { ...incomingMetadata, category: providerCategory },
+        { tripId: 'trip-9' }
+      );
+      expect(place.baseData.category).toBe(expected);
+    });
+
+    it('lascia invariata una categoria già valida (es. "landmark")', () => {
+      const place = PlaceMergeEngine.mergeFromProvider(
+        { ...incomingMetadata, category: 'landmark' },
+        { tripId: 'trip-9' }
+      );
+      expect(place.baseData.category).toBe('landmark');
+    });
+
+    it('ricade su "other" per una categoria sconosciuta, mai un errore', () => {
+      const place = PlaceMergeEngine.mergeFromProvider(
+        { ...incomingMetadata, category: 'un-valore-mai-visto' },
+        { tripId: 'trip-9' }
+      );
+      expect(place.baseData.category).toBe('other');
+    });
+
+    it('normalizza anche nel ramo update di mergePlace (stessa externalFromMetadata condivisa)', () => {
+      const existing: TravelPlace = {
+        id: 'place-1',
+        tripId: 'trip-1',
+        externalProviderId: 'ext-1',
+        baseData: { providerId: 'ext-1', name: 'Colosseo', category: 'landmark' },
+        priority: 'must_see',
+        status: 'to_visit',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      const merged = PlaceMergeEngine.mergePlace(existing, { ...incomingMetadata, category: 'attraction' });
+      expect(merged.baseData.category).toBe('landmark');
+    });
   });
 });

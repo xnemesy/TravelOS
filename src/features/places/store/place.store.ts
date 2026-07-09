@@ -25,7 +25,7 @@ interface PlaceState {
 }
 
 // Inizializza il repository con i mock globali
-const repository = new InMemoryPlaceRepository(allMockPlaces);
+export const repository = new InMemoryPlaceRepository(allMockPlaces);
 
 export const usePlaceStore = create<PlaceState>((set, get) => ({
   places: {},

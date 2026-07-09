@@ -15,4 +15,5 @@ export * from './useTimeline';
 export * from './useBudget';
 export * from './useWeather';
 export * from './usePlaces';
+export * from './usePlaceDetails';
 export * from './useTravelActions';

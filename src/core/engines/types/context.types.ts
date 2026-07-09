@@ -221,6 +221,20 @@ export interface PlaceRef {
   freeTimePurpose?: string; // Scopo contestuale per gli slot di tempo libero
 }
 
+export type ResolvedPlaceSource = 
+  | "saved" 
+  | "google" 
+  | "editorial" 
+  | "osm" 
+  | "apple" 
+  | "mock";
+
+export interface ResolvedPlace {
+  place: PlaceRef;        // The canonical projection for the UI
+  isTransient: boolean;   // True if it hasn't been saved to the trip
+  source: ResolvedPlaceSource; 
+}
+
 export interface TimelineDaySchedule {
   dayNumber: number;
   date: string; // YYYY-MM-DD

@@ -52,3 +52,7 @@ ADR-014 identifica che lo stub esistente `IMemoriesEngine` (`captureMoment`/`gen
 ## Backend: `CacheRepository` scritto ma non collegato
 
 `backend/src/repositories/CacheRepository.ts` è una cache TTL in-memory funzionante ma **non importata** da `PlacesService`. Scaffolding pronto per un'ottimizzazione futura, non ancora attivato.
+
+## `TripCalculator.getTripStatus()` non ha un corto circuito per `'archived'`
+
+Scoperto durante l'implementazione di `TripLifecycleWatcher` (Sprint 15, ADR-015 §2.6): la funzione ha un corto circuito esplicito per `trip.status === 'cancelled'` (ritorna sempre `'cancelled'`, indipendentemente dalle date), ma **nessun corto circuito equivalente per `'archived'`** — un trip archiviato viene derivato con la stessa logica a date di un trip normale (`planned`/`ongoing`/`completed`), non ritorna mai `'archived'`. Verificato leggendo [trip-calculator.ts:14-22](../../src/core/travel-engine/trip-calculator.ts). Non corretto in questa sessione (fuori scope, `TripCalculator` non doveva essere toccato) — `TripLifecycleWatcher` gestisce comunque `'archived'` correttamente nella propria mappatura interna (`toWatchedStage`), ma quel ramo è oggi irraggiungibile passando per `TripCalculator.getTripStatus()`, perché non lo produce mai in output.

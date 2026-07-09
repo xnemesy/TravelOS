@@ -4,11 +4,8 @@ import { useRouter, useLocalSearchParams, useGlobalSearchParams } from 'expo-rou
 import { Ionicons } from '@expo/vector-icons';
 import { Typography } from '../../../../src/shared/components/Typography';
 import { TextField } from '../../../../src/shared/components/forms/TextField';
-import { usePlaces, useTravelContext, useTravelActions, useTimeline } from '../../../../src/shared/hooks';
+import { usePlaces, usePlaceDetails, useTravelContext, useTravelActions, useTimeline } from '../../../../src/shared/hooks';
 import { calculateHaversineDistance, formatDistance } from '../../../../src/shared/utils/distance.utils';
-import { placeRepository } from '../../../../src/domain/providers/TravelServices';
-import { PlaceCategory } from '../../../../src/core/domain/models/PlaceCategory';
-import { Place } from '../../../../src/core/domain/models/Place';
 
 const { width } = Dimensions.get('window');
 const HEADER_HEIGHT = 450;
@@ -66,44 +63,12 @@ export default function PlaceDetailScreen() {
   
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const [place, setPlace] = useState<Place | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const saved = savedPlaces.find((p) => p.id === cleanPlaceId);
-    if (saved) {
-      setPlace(saved);
-      setLoading(false);
-    } else {
-      setLoading(true);
-      placeRepository.getPlaceDetails(cleanPlaceId)
-        .then((res) => {
-          let photo = res.photoUrl;
-          if (photo && !photo.startsWith('http')) {
-            const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api';
-            const BACKEND_BASE = API_URL.endsWith('/api') ? API_URL.slice(0, -4) : API_URL;
-            photo = `${BACKEND_BASE}${photo}`;
-          }
-          
-          const validCategories = (res.categories || []).map((cat: string) => {
-            return Object.values(PlaceCategory).includes(cat as any) ? cat : 'attraction';
-          });
-
-          setPlace({
-            ...res,
-            photoUrl: photo,
-            coverImageUrl: photo,
-            categories: validCategories,
-          } as any);
-        })
-        .catch((err) => {
-          console.error('[PlaceDetailScreen] Failed to load place details:', err);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }
-  }, [savedPlaces, cleanPlaceId]);
+  // ADR-017 §5.2/§5.4: la UI legge il luogo esclusivamente tramite hook —
+  // mai un import diretto di PlaceRepository/Place/PlaceMetadata/TravelPlace.
+  // usePlaceDetails copre sia i luoghi già salvati (usePlaces) sia quelli
+  // non ancora salvati (ricerca live, catalogo editoriale) tramite la
+  // pipeline transiente Provider → Canonical → PlaceRef, mai persistita.
+  const { place, resolvedPlace, loading } = usePlaceDetails(tripId, cleanPlaceId);
 
   const isAlreadySaved = useMemo(() => {
     return place ? savedPlaces.some((p) => p.id === place.id) : false;
@@ -351,11 +316,11 @@ export default function PlaceDetailScreen() {
               <Typography variant="caption" className="text-white/80 uppercase tracking-widest font-medium">
                 {place.category}
               </Typography>
-              {(place as any).source?.providerName && (
+              {resolvedPlace?.source && resolvedPlace.source !== 'saved' && (
                 <View className="bg-blue-600/90 backdrop-blur-md px-2.5 py-0.5 rounded-full flex-row items-center">
                   <Ionicons name="cloud-done" size={10} color="#FFFFFF" />
-                  <Typography variant="caption" className="text-white font-bold ml-1 text-[10px]">
-                    {(place as any).source.providerName}
+                  <Typography variant="caption" className="text-white font-bold ml-1 text-[10px] capitalize">
+                    {resolvedPlace.source}
                   </Typography>
                 </View>
               )}
@@ -465,8 +430,8 @@ export default function PlaceDetailScreen() {
                   <View className="space-y-1.5">
                     <View className="flex-row items-center justify-between">
                       <Typography variant="caption" className="text-gray-500">Sorgente Dati (Base):</Typography>
-                      <Typography variant="captionMedium" className="text-gray-800">
-                        {(place as any).source?.providerName || 'Catalogo Travel OS'}
+                      <Typography variant="captionMedium" className="text-gray-800 capitalize">
+                        {resolvedPlace?.source || 'Catalogo Travel OS'}
                       </Typography>
                     </View>
                     <View className="flex-row items-center justify-between">

@@ -64,3 +64,14 @@ export interface ExpenseAddedPayload {
   currency: string;
   category: string;
 }
+
+// Sprint 15 (ADR-015 §2.6, Domain Lifecycle): pubblicati esclusivamente da
+// TripLifecycleWatcher — mai da un'azione utente diretta. Vero per il solo
+// passare del tempo rispetto alle date del trip, non richiesto da nessuno.
+export interface TripStartedPayload {
+  startedAt: string; // ISO 8601 — istante in cui la transizione è stata osservata
+}
+
+export interface TripCompletedPayload {
+  completedAt: string; // ISO 8601 — istante in cui la transizione è stata osservata
+}

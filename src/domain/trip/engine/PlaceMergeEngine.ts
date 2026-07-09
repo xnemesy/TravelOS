@@ -1,4 +1,4 @@
-import { TravelPlace, TravelPlaceSchema, ExternalPlace, EditorialPlace } from '../models/place.model';
+import { TravelPlace, TravelPlaceSchema, ExternalPlace, EditorialPlace, PlaceCategory, PlaceCategorySchema } from '../models/place.model';
 import { PlaceMetadata } from '../../providers/travel-providers.types';
 
 /**
@@ -128,6 +128,36 @@ export class PlaceMergeEngine {
   }
 
   /**
+   * Mappa i valori di categoria realmente emessi dai provider (liberi,
+   * `string`, mai stati validati contro `PlaceCategorySchema`) sui valori
+   * canonici. Scoperto in produzione (Sprint 15): `real-places.adapter.ts`
+   * e `mock-travel.providers.ts` emettono `'attraction'` (il valore più
+   * comune), `'food'`, `'cultural'`, `'nightlife'` — nessuno dei quattro è
+   * uno dei 10 valori di `PlaceCategorySchema`. Il cast cieco precedente
+   * (`as any`) lasciava passare questi valori fino a `mergeFromProvider`,
+   * dove la validazione Zod del ramo "create" (assente in `mergePlace`,
+   * che non valida mai) falliva rumorosamente per ogni risultato di
+   * ricerca live con una di queste categorie — non un caso raro, il caso
+   * dominante del dataset curato. Valori già validi passano invariati;
+   * valori sconosciuti (non in questa mappa) cadono su `'other'`, mai un
+   * errore — coerente con `PlaceCategorySchema.category.default('other')`,
+   * che si applica solo quando il campo è assente, non quando è presente
+   * ma invalido.
+   */
+  private static readonly PROVIDER_CATEGORY_ALIASES: Record<string, PlaceCategory> = {
+    attraction: 'landmark',
+    food: 'restaurant',
+    cultural: 'museum',
+    nightlife: 'bar',
+  };
+
+  private static normalizeCategory(raw: string | undefined): PlaceCategory {
+    if (!raw) return 'other';
+    if (PlaceCategorySchema.safeParse(raw).success) return raw as PlaceCategory;
+    return this.PROVIDER_CATEGORY_ALIASES[raw.toLowerCase()] ?? 'other';
+  }
+
+  /**
    * Normalizza un `PlaceMetadata` (dato grezzo di provider, SIP) nella forma
    * `ExternalPlace` usata dal livello External di `TravelPlace`. Estratta da
    * `mergePlace` per essere condivisa anche da `mergeFromProvider` (ramo di
@@ -137,7 +167,7 @@ export class PlaceMergeEngine {
     return {
       providerId: meta.placeId,
       name: meta.name,
-      category: meta.category as any,
+      category: this.normalizeCategory(meta.category),
       coverImageUrl: meta.coverImageUrl || meta.photoUrls?.[0],
       photoUrls: meta.photoUrls,
       matchScore: meta.matchScore || 100,
@@ -217,27 +247,29 @@ export class PlaceMergeEngine {
    *   nuovo dal solo livello External — Editorial/Personal non vengono mai
    *   popolati da dati provider (coerente con ADR-017 §3.2). L'`id` del
    *   nuovo `TravelPlace` è generato indipendentemente da
-   *   `incoming.placeId`, con la stessa convenzione già in uso in
-   *   `TripRepository.createTrip` (`${prefix}-${Date.now()}-${random}`,
-   *   vedi `trip.repository.ts`) — non va mai fatto coincidere con
-   *   `externalProviderId`: sono due identità diverse per costruzione
-   *   (`externalProviderId` esiste apposta per riferire il provider senza
-   *   che `id` ne dipenda, vedi commento sul campo in `place.model.ts`).
-   *   Farli coincidere romperebbe silenziosamente `InMemoryPlaceRepository`
+   *   `incoming.placeId`/`incoming.providerId`, con la stessa convenzione
+   *   già in uso in `TripRepository.createTrip`
+   *   (`${prefix}-${Date.now()}-${random}`, vedi `trip.repository.ts`) —
+   *   non va mai fatto coincidere con `externalProviderId`: sono due
+   *   identità diverse per costruzione (`externalProviderId` esiste
+   *   apposta per riferire il provider senza che `id` ne dipenda, vedi
+   *   commento sul campo in `place.model.ts`). Farli coincidere
+   *   romperebbe silenziosamente `InMemoryPlaceRepository`
    *   (`place.repository.ts`), che tiene un'unica `Map` globale chiavata
    *   su `id` per tutti i trip: lo stesso luogo fisico salvato in due trip
    *   diversi produrrebbe due `TravelPlace` con lo stesso `id`, e il
    *   secondo salvataggio sovrascriverebbe silenziosamente il primo.
    *
-   * **Limite noto e non ancora risolto**: questa funzione accetta solo
-   * `PlaceMetadata` come `incoming`. Il catalogo editoriale
-   * (`EditorialPlaceItem.baseData`, vedi `editorial-places.catalog.ts`) è
-   * tipizzato `ExternalPlace`, non `PlaceMetadata` — la forma non
-   * corrisponde. Collegare il catalogo editoriale come "secondo produttore
-   * legittimo" (ADR-017 §3.5) richiederà quindi un passaggio di
-   * conversione aggiuntivo (o una firma diversa), non solo passare
-   * `options.editorial`: quell'opzione copre solo dove va il contenuto
-   * curato, non la forma del dato in ingresso. Non risolto in questa fase.
+   * `incoming` accetta sia `PlaceMetadata` (dato SIP/provider) sia
+   * `ExternalPlace` (dato già nella forma del livello External, es.
+   * `EditorialPlaceItem.baseData` — ADR-017 §3.5, "il catalogo editoriale
+   * diventa un secondo produttore legittimo... tramite lo stesso
+   * PlaceMergeEngine"). Disambiguazione a runtime con lo stesso
+   * type-guard già usato da `mergePlace` (`'placeId' in incoming &&
+   * !('providerId' in incoming)`): se è già `ExternalPlace`, si salta
+   * `externalFromMetadata` e si usa direttamente, nessuna duplicazione di
+   * logica di normalizzazione. Chiude il limite documentato in Fase 2
+   * (Sprint 14) di questa stessa funzione.
    *
    * Strategia di errore: `throw`, non `safeParse` con fallback silenzioso
    * come fa `TripRepository` per i dati persistiti/legacy (vedi
@@ -249,7 +281,7 @@ export class PlaceMergeEngine {
    * corretta, non c'è alcun dato utente in gioco da salvare a ogni costo.
    */
   public static mergeFromProvider(
-    incoming: PlaceMetadata,
+    incoming: PlaceMetadata | ExternalPlace,
     options: { tripId: string; existing?: TravelPlace | null; editorial?: EditorialPlace }
   ): TravelPlace {
     const { tripId, existing = null, editorial } = options;
@@ -263,7 +295,10 @@ export class PlaceMergeEngine {
       return this.mergePlace(existing, incoming);
     }
 
-    const ext = this.externalFromMetadata(incoming);
+    const isMetadata = 'placeId' in incoming && !('providerId' in incoming);
+    const ext: ExternalPlace = isMetadata
+      ? this.externalFromMetadata(incoming as PlaceMetadata)
+      : (incoming as ExternalPlace);
     const now = new Date();
 
     const candidate = {

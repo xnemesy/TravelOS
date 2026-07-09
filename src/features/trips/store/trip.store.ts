@@ -6,12 +6,18 @@ import { getAutoCoverForDestination } from '../utils/cover-matcher';
 import { eventBus } from '../../../core/events/event-bus';
 import { placesEngine, timelineEngine, contextEngine } from '../../../core/engines';
 import { TravelServices } from '../../../domain/providers/TravelServices';
+import { TripLifecycleWatcher } from '../../../core/engines/lifecycle/trip-lifecycle.watcher';
 
 const USE_REAL_PLACES = process.env.EXPO_PUBLIC_USE_REAL_PLACES === 'true';
 
 // Istanziamo il repository offline-first con MMKV
 const storageAdapter = new MMKVAdapter();
 const tripRepository = new TripRepository(storageAdapter);
+
+// Sprint 15 (ADR-015 §2.6, Domain Lifecycle) — osserva le transizioni derivate
+// di ciascun trip caricato e pubblica TripStarted/TripCompleted sull'Event Bus.
+// Fire-and-forget: non altera i tempi/il comportamento di loadTrips() verso la UI.
+const tripLifecycleWatcher = new TripLifecycleWatcher(storageAdapter, eventBus);
 
 interface TripState {
   trips: Trip[];
@@ -46,6 +52,13 @@ export const useTripStore = create<TripState>((set, get) => ({
     try {
       const loadedTrips = await tripRepository.getUserTrips('default-user');
       set({ trips: loadedTrips, isLoading: false });
+
+      // Osservazione lifecycle non bloccante: non fa parte del contratto di
+      // loadTrips() verso la UI, quindi non viene attesa (fire-and-forget,
+      // errori già gestiti internamente dal watcher per singolo trip).
+      loadedTrips.forEach((trip) => {
+        void tripLifecycleWatcher.checkTransition(trip);
+      });
     } catch (error) {
       console.error('Errore nel caricamento dei viaggi:', error);
       set({ isLoading: false });
