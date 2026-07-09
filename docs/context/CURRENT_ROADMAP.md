@@ -15,6 +15,7 @@ Principio guida (dal 2026-07-08): una decisione già presa in un'ADR **non si ri
 | 17 | **Attivare ADR-014, Fase B — Memory Intelligence**. Decay, TasteProfile, clustering, Traveler DNA | ADR-014 | Non iniziato — dopo Sprint 16 |
 | 18 | Context Assembly — il DNA entra in `TravelContext` come segnale che `JourneyComposer` può leggere | ADR-014 (Fase 3, parziale) | Non iniziato — dopo Sprint 17 |
 | 19 | AI Concierge — verbalizza il DNA/contesto assemblato | **Nessuna ADR ancora** — territorio scoperto, vedi nota sotto | Non iniziato — richiede un'ADR dedicata prima di partire |
+| **20** | **Trip Setup Domain** — modelli di dominio (`Transport`, `Accommodation`, `Mobility`, `TripConstraint`, `TripDocument`, `TripPreferences`, `TripSetup`) + `SetupCompletionEngine` | ADR-018 (nuova, decisa e implementata in questa sessione — non un'attivazione differita) | ✅ Solo dominio/engine/test — nessuna persistenza, wizard UI o collegamento al Planner (esplicitamente fuori scope, vedi ADR-018 §2) |
 
 **Perché Sprint 15 sta prima di Sprint 16/17, e non dopo**: Sprint 13.2 (Domain Lifecycle) non blocca la Fase A (sola cattura, nessuna interpretazione), ma blocca la Fase B — senza un momento discreto "il viaggio è finito" il DNA non ha mai un punto in cui applicare il decay temporale. Tenerlo prima invece che dopo evita di dover riaprire la sequenza quando si arriverà a quella fase.
 
@@ -76,6 +77,18 @@ Prima metà di "Fase 3 — Consumo" di ADR-014: il Traveler DNA (Sprint 17) entr
 ## Sprint 19 — AI Concierge
 
 Seconda metà di "Fase 3 — Consumo" di ADR-014: un `TasteProfileNarrator` + un AI Concierge verbalizzano il contesto assemblato in Sprint 18. **A differenza degli sprint precedenti, questo non è la semplice attivazione di una decisione già presa**: nessuna ADR oggi descrive scope, vincoli, o design dell'AI Concierge — solo menzioni aspirazionali in `DOMAIN_TERMS.md`/`AI_ARCHITECTURE.md`. Prima di questo sprint serve un'ADR dedicata (stile ADR-014), non un'estensione implicita di ADR-014 — l'AI Concierge è un consumer del Traveler DNA, non parte della sua decisione di modello.
+
+## Sprint 20 — Trip Setup Domain (ADR-018)
+
+Eseguito **fuori sequenza** rispetto a 16-19 (che restano bloccati/in attesa come descritto sopra) — lavoro di prodotto indipendente dalla catena Traveler DNA/ADR-014, non un salto avanti nella stessa sequenza. [ADR-018](../adr/018-trip-setup-engine.md) è stata decisa **e** implementata nella stessa sessione (non un'attivazione differita): non esisteva alcuna decisione pregressa sul dominio Trip Setup da attivare, verificato con grep su tutto il repository prima di scrivere codice.
+
+**Consegnato — solo dominio, engine, test (nessuna adozione, per costruzione)**:
+- 7 modelli Zod in [`trip-setup.model.ts`](../../src/domain/trip/models/trip-setup.model.ts): `Transport`, `Accommodation`, `Mobility`, `TripConstraint`, `TripDocument`, `TripPreferences`, `TripSetup` (aggregato radice). Distinti esplicitamente da `TripEventSchema` (esistente, entrata di calendario leggera, non toccata).
+- `SetupCompletionEngine.evaluate(setup, tripDurationNights): SetupCompletionReport` — Domain Service puro (nessun I/O, nessuna dipendenza da orologio/random), calcola percentuale di completezza (6 sezioni, peso uguale), sezioni completate/mancanti, e `plannerReadiness` (soglia distinta e più stretta: `transports` sempre richiesto con **almeno un elemento**; `accommodations` richiesto allo stesso modo solo se `tripDurationNights >= 1` — vedi ADR-018 §5 per la motivazione).
+- Regola di dominio: `undefined` (sezione mai affrontata) ≠ array vuoto/oggetto presente (sezione affrontata, esplicitamente vuota) — vedi ADR-018 §3.7.
+- **Revisione architetturale indipendente (stessa sessione)**, consenso raggiunto su 2 correzioni applicate ad ADR-018 e al codice: (1) prerequisito Planner reso condizionale alla durata del trip — un day-trip (0 notti) non richiede `accommodations`, altrimenti si spingerebbe verso un alloggio fittizio; (2) `Transport.sequenceOrder?: number` aggiunto per tratte multiple nello stesso giorno (se assente, ordine dedotto da `departureDate`). Proposta di fondere `TripSetup` dentro `Trip` **scartata** — romperebbe il pattern satellite già stabilito da ADR-017 per `TravelPlace`; documentata invece in ADR-018 §6 (Future Work, solo testo) una futura `validateSetupAgainstTrip(trip, setup): DateRangeViolation[]`, non implementata.
+- 34 nuovi test (22 sui modelli Zod, 12 sull'engine, inclusi i casi day-trip). **Verificato**: `tsc --noEmit` invariato (2 errori preesistenti, non correlati); `jest` 111/111 verdi.
+- **Esplicitamente non implementato, per vincolo della sessione**: nessuna persistenza (repository/store/MMKV), nessun wizard UI, nessun collegamento a `JourneyComposer`/Planner, nessuna modifica a `Trip`. Vedi ADR-018 §7 per il prossimo passo (non deciso qui).
 
 ## Prerequisito trasversale — `UserContext`
 
