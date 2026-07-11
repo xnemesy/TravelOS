@@ -21,9 +21,18 @@ export type DomainFactType =
   | 'TimelineAutoScheduled'
   | 'TripStarted'
   | 'TripCompleted'
+  | 'TripCreated'
+  | 'TripUpdated'
+  | 'TripDeleted'
   | 'ExpenseAdded'
   | 'BookingImported'
-  | 'PhotoAdded';
+  | 'PhotoAdded'
+  | 'TransportAdded'
+  | 'TransportUpdated'
+  | 'TransportRemoved'
+  | 'AccommodationAdded'
+  | 'AccommodationUpdated'
+  | 'AccommodationRemoved';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   id: string;
@@ -65,6 +74,24 @@ export interface ExpenseAddedPayload {
   category: string;
 }
 
+// Transport Setup module — pubblicati da TripSetupEngine ad ogni mutazione.
+// Consumer noto oggi: il listener wildcard di useTripStore (ricalcolo stats);
+// consumer futuro possibile: soglia di sblocco Planner (ADR-018 §5), non
+// ancora collegata (per costruzione, "no planner logic yet" in questo modulo).
+export interface TransportChangedPayload {
+  transportId: string;
+  mode: string;
+  destination: string;
+}
+
+// Accommodation Setup module — stesso ragionamento di TransportChangedPayload:
+// consumer noto oggi è il listener wildcard di useTripStore.
+export interface AccommodationChangedPayload {
+  accommodationId: string;
+  type: string;
+  name: string;
+}
+
 // Sprint 15 (ADR-015 §2.6, Domain Lifecycle): pubblicati esclusivamente da
 // TripLifecycleWatcher — mai da un'azione utente diretta. Vero per il solo
 // passare del tempo rispetto alle date del trip, non richiesto da nessuno.
@@ -74,4 +101,12 @@ export interface TripStartedPayload {
 
 export interface TripCompletedPayload {
   completedAt: string; // ISO 8601 — istante in cui la transizione è stata osservata
+}
+
+// Pubblicato da useTripStore.deleteTrip su eliminazione esplicita dell'utente.
+// Consumer noti: ContextEngine (invalida cache + subscribers del trip) e il
+// listener wildcard di useTripStore (che lo ignora per evitare ricalcoli su un
+// trip ormai rimosso).
+export interface TripDeletedPayload {
+  id: string;
 }

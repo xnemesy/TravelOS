@@ -1,3 +1,5 @@
+import { Transport, Accommodation } from '../../../domain/trip/models/trip-setup.model';
+
 /**
  * ============================================================================
  * CONTEXT TYPES & TRAVEL CONTEXT (v2.0)
@@ -10,6 +12,17 @@ export type TripPhase = 'inspiration' | 'planning' | 'planned' | 'ongoing' | 'co
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 export type EngineSource = 'timeline' | 'places' | 'journey' | 'budget' | 'documents' | 'memories' | 'sync';
 export type TravelStyle = string;
+
+/**
+ * Stato di idratazione da storage persistente (MMKV) per un trip (ADR-020).
+ * 'idle': nessuna idratazione mai iniziata per questo trip in questa sessione.
+ * 'hydrating': idratazione in corso — il ContextEngine non ha ancora composto
+ * uno stato completo, i campi derivati dagli Engine (savedPlaces/timeline/
+ * transports/accommodations) sono ai loro default onesti, non dati reali.
+ * 'ready': tutti gli Engine registrati hanno terminato la lettura da storage
+ * persistente almeno una volta — lo stato composto riflette la verità.
+ */
+export type HydrationStatus = 'idle' | 'hydrating' | 'ready';
 
 
 export interface OptimizationProfile {
@@ -266,6 +279,10 @@ export interface TravelContext {
   tripTitle?: string;
   destination?: string;
   tripPhase: TripPhase;
+  // Stato di idratazione da MMKV (ADR-020) — 'ready' garantisce che savedPlaces/
+  // timeline/transports/accommodations riflettano storage persistente, non i
+  // default vuoti mostrati durante 'idle'/'hydrating'.
+  hydrationStatus: HydrationStatus;
   currentDay: number | null; // es. 2 per "Giorno 2"
   totalDays: number;
   startDate: string; // ISO Date
@@ -292,6 +309,15 @@ export interface TravelContext {
   savedPlacesCount: number;
   visitedPlacesCount: number;
   nearbyPlacesOfInterest: PlaceRef[];
+
+  // Trasporti e alloggi di setup (da TripSetupEngine, Transport/Accommodation
+  // Setup module) — slice dei soli sotto-insiemi `transports`/`accommodations`
+  // di TripSetup (ADR-018 §3.7); le altre sezioni (mobility/constraints/
+  // documents/preferences) non sono ancora adottate.
+  transports: Transport[];
+  transportsCount: number;
+  accommodations: Accommodation[];
+  accommodationsCount: number;
 
   // Meteo e Ambiente (da JourneyEngine - Fase 2)
   weather: {

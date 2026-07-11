@@ -1,10 +1,8 @@
 import { IPlacesEngine, IContextEngine } from '../types/engines.types';
 import { PlaceRef, TravelContext } from '../types/context.types';
 import { eventBus } from '../../events/event-bus';
-import { MMKVAdapter } from '../../storage/mmkv.adapter';
+import { IPlacesRepository } from './places.repository.interface';
 import { PlaceMergeEngine } from '../../../domain/trip/engine/PlaceMergeEngine';
-
-const localDb = new MMKVAdapter();
 
 /**
  * ============================================================================
@@ -12,26 +10,42 @@ const localDb = new MMKVAdapter();
  * ============================================================================
  * Responsabilità: Gestione catalogo luoghi, preferiti, salvati e visitati.
  * Regole:
- * - Orchestra i flussi e lo storage (MMKV -> Repository -> Engine).
+ * - Orchestra i flussi di dominio; ogni persistenza passa da IPlacesRepository
+ *   (ADR-021) — l'Engine non conosce MMKV, chiavi di storage né formato cache.
  * - Pubblica il proprio stato nel Context Engine senza interrogazioni continue.
  * - Emette Domain Facts sull'Event Bus in caso di modifiche.
  */
 export class PlacesEngine implements IPlacesEngine {
-  // In-memory store locale per la Fase 1, predisposto per essere sostituito da un Repository MMKV/SQLite
+  // In-memory store reattivo per la Fase 1 — la fonte di verità persistente resta il repository.
   private savedPlacesMap: Map<string, PlaceRef[]> = new Map();
   private visitedPlacesSet: Set<string> = new Set();
 
-  constructor(contextEngine: IContextEngine) {
+  constructor(contextEngine: IContextEngine, private repository: IPlacesRepository) {
     // Registra la propria slice di stato nel Context Engine per la composizione reattiva
     contextEngine.registerStatePublisher('PlacesEngine', (tripId: string) =>
       this.publishStateSlice(tripId)
     );
+
+    // Registra il proprio lifecycle di idratazione (ADR-020): il ContextEngine lo
+    // attende prima di comporre uno stato per un trip.
+    contextEngine.registerHydratable('PlacesEngine', (tripId: string) =>
+      this.hydrate(tripId)
+    );
+  }
+
+  /**
+   * Idrata da storage persistente lo stato di questo Engine per il trip indicato
+   * (ADR-020). Delega al getter pigro esistente — nessun nuovo percorso di
+   * caricamento, solo un nome esplicito per il contratto di idratazione.
+   */
+  public async hydrate(tripId: string): Promise<void> {
+    await this.getSavedPlaces(tripId);
   }
 
   public async getSavedPlaces(tripId: string): Promise<PlaceRef[]> {
     const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
     if (!this.savedPlacesMap.has(cleanTripId)) {
-      const persisted = await localDb.get<PlaceRef[]>(`places_${cleanTripId}`);
+      const persisted = await this.repository.getPlaces(cleanTripId);
       if (persisted) {
         this.savedPlacesMap.set(cleanTripId, persisted);
       } else {
@@ -73,7 +87,7 @@ export class PlacesEngine implements IPlacesEngine {
         };
         const updated = current.map((p) => (p.id === existingDuplicate.id ? merged : p));
         this.savedPlacesMap.set(cleanTripId, updated);
-        await localDb.set(`places_${cleanTripId}`, updated);
+        await this.repository.savePlaces(cleanTripId, updated);
         
         // Emette il Domain Fact per forzare l'aggiornamento delle statistiche nello store
         eventBus.publish({
@@ -94,7 +108,7 @@ export class PlacesEngine implements IPlacesEngine {
 
       const updated = [...current, place];
       this.savedPlacesMap.set(cleanTripId, updated);
-      await localDb.set(`places_${cleanTripId}`, updated);
+      await this.repository.savePlaces(cleanTripId, updated);
 
       // Emette il Domain Fact
       eventBus.publish({
@@ -119,7 +133,7 @@ export class PlacesEngine implements IPlacesEngine {
     const current = await this.getSavedPlaces(cleanTripId);
     const filtered = current.filter((p) => p.id !== cleanPlaceId);
       this.savedPlacesMap.set(cleanTripId, filtered);
-      await localDb.set(`places_${cleanTripId}`, filtered);
+      await this.repository.savePlaces(cleanTripId, filtered);
 
     eventBus.publish({
       id: `evt-${Date.now()}`,
@@ -143,7 +157,7 @@ export class PlacesEngine implements IPlacesEngine {
     const current = await this.getSavedPlaces(cleanTripId);
     const updated = current.map((p) => (p.id === cleanPlaceId ? { ...p, isVisited } : p));
     this.savedPlacesMap.set(cleanTripId, updated);
-    await localDb.set(`places_${cleanTripId}`, updated);
+    await this.repository.savePlaces(cleanTripId, updated);
 
     eventBus.publish({
       id: `evt-${Date.now()}`,
@@ -164,7 +178,7 @@ export class PlacesEngine implements IPlacesEngine {
     const current = await this.getSavedPlaces(cleanTripId);
     const updated = current.map((p) => (p.id === cleanPlaceId ? { ...p, notes } : p));
     this.savedPlacesMap.set(cleanTripId, updated);
-    await localDb.set(`places_${cleanTripId}`, updated);
+    await this.repository.savePlaces(cleanTripId, updated);
 
     // Emette Domain Fact per ricomporre reattivamente lo stato nel ContextEngine e nella Timeline
     eventBus.publish({

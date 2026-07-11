@@ -3,9 +3,7 @@ import { TimelineDaySchedule, PlaceRef, TravelContext } from '../types/context.t
 import { TimelineGenerator } from '../../../domain/services/TimelineGenerator';
 import { journeyComposer } from '../../../domain/services/JourneyComposer';
 import { eventBus } from '../../events/event-bus';
-import { MMKVAdapter } from '../../storage/mmkv.adapter';
-
-const localDb = new MMKVAdapter();
+import { ITimelineRepository } from './timeline.repository.interface';
 
 /**
  * ============================================================================
@@ -13,7 +11,9 @@ const localDb = new MMKVAdapter();
  * ============================================================================
  * Responsabilità: Genera la timeline da cui derivano Planning -> Journey -> Memories.
  * Regole:
- * - Orchestra le giornate del viaggio.
+ * - Orchestra le giornate del viaggio; ogni persistenza passa da
+ *   ITimelineRepository (ADR-021) — l'Engine non conosce MMKV, chiavi di
+ *   storage, formato cache, né come/dove sono persistiti i Trip.
  * - Delega tutti i calcoli matematici e stime di tempo a TimelineGenerator (Domain Service).
  * - Pubblica lo stato nel Context Engine e notifica tramite Domain Facts.
  */
@@ -21,12 +21,18 @@ export class TimelineEngine implements ITimelineEngine {
   private timelineMap: Map<string, TimelineDaySchedule[]> = new Map();
   private contextEngine: IContextEngine;
 
-  constructor(contextEngine: IContextEngine) {
+  constructor(contextEngine: IContextEngine, private repository: ITimelineRepository) {
     this.contextEngine = contextEngine;
 
     // Registra la propria slice di stato nel Context Engine per la composizione reattiva
     contextEngine.registerStatePublisher('TimelineEngine', (tripId: string) =>
       this.publishStateSlice(tripId)
+    );
+
+    // Registra il proprio lifecycle di idratazione (ADR-020): il ContextEngine lo
+    // attende prima di comporre uno stato per un trip.
+    contextEngine.registerHydratable('TimelineEngine', (tripId: string) =>
+      this.hydrate(tripId)
     );
 
     // Sottoscrive gli eventi di visita per aggiornare reattivamente le tappe della timeline
@@ -54,6 +60,15 @@ export class TimelineEngine implements ITimelineEngine {
     });
   }
 
+  /**
+   * Idrata da storage persistente lo stato di questo Engine per il trip indicato
+   * (ADR-020). Delega al getter pigro esistente — nessun nuovo percorso di
+   * caricamento, solo un nome esplicito per il contratto di idratazione.
+   */
+  public async hydrate(tripId: string): Promise<void> {
+    await this.getTripTimeline(tripId);
+  }
+
   public async markPlaceAsVisited(tripId: string, placeId: string, isVisited: boolean = true): Promise<void> {
     const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
     const cleanPlaceId = Array.isArray(placeId) ? placeId[0] : String(placeId || '');
@@ -66,7 +81,7 @@ export class TimelineEngine implements ITimelineEngine {
         const newTimeline = [...timeline];
         newTimeline[i] = TimelineGenerator.generateDaySchedule(day.dayNumber, day.date, updatedPlaces);
         this.timelineMap.set(cleanTripId, newTimeline);
-        await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+        await this.repository.saveTimeline(cleanTripId, newTimeline);
         modified = true;
       }
     }
@@ -89,7 +104,7 @@ export class TimelineEngine implements ITimelineEngine {
         const newTimeline = [...timeline];
         newTimeline[i] = TimelineGenerator.generateDaySchedule(day.dayNumber, day.date, updatedPlaces);
         this.timelineMap.set(cleanTripId, newTimeline);
-        await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+        await this.repository.saveTimeline(cleanTripId, newTimeline);
         modified = true;
       }
     }
@@ -102,37 +117,35 @@ export class TimelineEngine implements ITimelineEngine {
   public async getTripTimeline(tripId: string): Promise<TimelineDaySchedule[]> {
     const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
     if (!this.timelineMap.has(cleanTripId)) {
-      const persisted = await localDb.get<TimelineDaySchedule[]>(`timeline_${cleanTripId}`);
+      const persisted = await this.repository.getTimeline(cleanTripId);
       if (persisted && persisted.length > 0) {
         // Deserializza correttamente e carica in cache
         this.timelineMap.set(cleanTripId, persisted);
       } else {
         // Carica i dettagli del viaggio per calcolarne la durata reale
-        const tripsKey = 'cache_user_trips_default-user';
-        const rawTrips = await localDb.get<any[]>(tripsKey);
-        const trip = rawTrips?.find(t => t.id === cleanTripId);
-        
+        const dateRange = await this.repository.getTripDateRange(cleanTripId);
+
         let start = new Date('2026-07-10T00:00:00.000Z');
         let end = new Date('2026-07-13T00:00:00.000Z'); // default 3 giorni
-        
-        if (trip) {
-          start = new Date(trip.startDate);
-          end = new Date(trip.endDate);
+
+        if (dateRange) {
+          start = dateRange.startDate;
+          end = dateRange.endDate;
         }
-        
+
         // Calcola la durata esatta del viaggio in giorni (minimo 1 giorno)
         const diffTime = Math.abs(end.getTime() - start.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
+
         const defaultDays: TimelineDaySchedule[] = [];
         for (let i = 0; i < diffDays; i++) {
           const currentDate = new Date(start.getTime() + i * 86400000);
           const dateStr = currentDate.toISOString().split('T')[0];
           defaultDays.push(TimelineGenerator.generateDaySchedule(i + 1, dateStr, []));
         }
-        
+
         this.timelineMap.set(cleanTripId, defaultDays);
-        await localDb.set(`timeline_${cleanTripId}`, defaultDays);
+        await this.repository.saveTimeline(cleanTripId, defaultDays);
       }
     }
     return this.timelineMap.get(cleanTripId)!;
@@ -161,7 +174,7 @@ export class TimelineEngine implements ITimelineEngine {
       );
 
       this.timelineMap.set(cleanTripId, newTimeline);
-      await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+      await this.repository.saveTimeline(cleanTripId, newTimeline);
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
@@ -194,7 +207,7 @@ export class TimelineEngine implements ITimelineEngine {
       );
 
       this.timelineMap.set(cleanTripId, newTimeline);
-      await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+      await this.repository.saveTimeline(cleanTripId, newTimeline);
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
@@ -232,7 +245,7 @@ export class TimelineEngine implements ITimelineEngine {
 
     if (modified) {
       this.timelineMap.set(cleanTripId, newTimeline);
-      await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+      await this.repository.saveTimeline(cleanTripId, newTimeline);
 
       // Nessun nuovo Domain Fact: PlacesEngine ha già annunciato PlaceRemoved.
       this.contextEngine.recompose(cleanTripId);
@@ -262,7 +275,7 @@ export class TimelineEngine implements ITimelineEngine {
         );
 
         this.timelineMap.set(cleanTripId, newTimeline);
-        await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+        await this.repository.saveTimeline(cleanTripId, newTimeline);
 
         eventBus.publish({
           id: `evt-${Date.now()}`,
@@ -295,7 +308,7 @@ export class TimelineEngine implements ITimelineEngine {
 
       newTimeline[dayIdx] = TimelineGenerator.reorderDaySchedule(newTimeline[dayIdx], orderedPlaceIds);
       this.timelineMap.set(cleanTripId, newTimeline);
-      await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+      await this.repository.saveTimeline(cleanTripId, newTimeline);
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
@@ -333,7 +346,7 @@ export class TimelineEngine implements ITimelineEngine {
     }
 
     this.timelineMap.set(cleanTripId, newTimeline);
-    await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+    await this.repository.saveTimeline(cleanTripId, newTimeline);
 
     // Payload reale: gli id dei luoghi effettivamente distribuiti (prima era un placeholder vuoto).
     // dayNumber è il primo giorno della timeline come ancora rappresentativa, perché l'auto-schedule
@@ -360,7 +373,7 @@ export class TimelineEngine implements ITimelineEngine {
       newTimeline[dayIdx] = await TimelineGenerator.optimizeDayRouteWithSIP(newTimeline[dayIdx], profileId);
 
       this.timelineMap.set(cleanTripId, newTimeline);
-      await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+      await this.repository.saveTimeline(cleanTripId, newTimeline);
 
       eventBus.publish({
         id: `evt-${Date.now()}`,
@@ -405,7 +418,7 @@ export class TimelineEngine implements ITimelineEngine {
     newTimeline[dayIdx] = newSchedule;
 
     this.timelineMap.set(cleanTripId, newTimeline);
-    await localDb.set(`timeline_${cleanTripId}`, newTimeline);
+    await this.repository.saveTimeline(cleanTripId, newTimeline);
 
     eventBus.publish({
       id: `evt-${Date.now()}`,

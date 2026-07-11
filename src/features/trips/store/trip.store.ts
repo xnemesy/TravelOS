@@ -102,6 +102,14 @@ export const useTripStore = create<TripState>((set, get) => ({
       activeTripId: newTrip.id,
     }));
 
+    eventBus.publish({
+      id: `evt-${Date.now()}`,
+      type: 'TripCreated',
+      timestamp: new Date().toISOString(),
+      tripId: newTrip.id,
+      payload: newTrip,
+    });
+
     return newTrip;
   },
 
@@ -110,6 +118,15 @@ export const useTripStore = create<TripState>((set, get) => ({
     set((state) => ({
       trips: state.trips.map(t => t.id === id ? updated : t)
     }));
+
+    eventBus.publish({
+      id: `evt-${Date.now()}`,
+      type: 'TripUpdated',
+      timestamp: new Date().toISOString(),
+      tripId: id,
+      payload: updated,
+    });
+
     return updated;
   },
 
@@ -123,6 +140,14 @@ export const useTripStore = create<TripState>((set, get) => ({
       trips: state.trips.filter(t => t.id !== id),
       activeTripId: state.activeTripId === id ? null : state.activeTripId
     }));
+
+    eventBus.publish({
+      id: `evt-${Date.now()}`,
+      type: 'TripDeleted',
+      timestamp: new Date().toISOString(),
+      tripId: id,
+      payload: { id },
+    });
   },
 
   duplicateTrip: async (id: string) => {
@@ -161,32 +186,66 @@ export const useTripStore = create<TripState>((set, get) => ({
 // altrimenti ogni nuovo DomainFactType richiederebbe di ricordarsi di aggiornare questo filtro.
 eventBus.subscribe('*', async (event) => {
   if (!event.tripId) return;
+  if (event.type === 'TripUpdated' || event.type === 'TripDeleted') return;
   const tripId = event.tripId;
   try {
+    const store = useTripStore.getState();
+    const trip = store.getTripById(tripId);
+    if (!trip) return;
+
     const places = await placesEngine.getSavedPlaces(tripId);
     const savedPlacesCount = places.length;
 
-    // Progresso allineato al Journey Score 2.0 calcolato dal Context Engine
+    // Attende che il ContextEngine abbia idratato questo trip prima di fidarsi
+    // del suo stato (ADR-020): senza questa attesa, un fatto di dominio che
+    // arriva mentre il trip non è ancora 'ready' leggerebbe il placeholder
+    // onesto (journeyScore/timeline vuoti) come se fosse la verità, rischiando
+    // di persistere progress/stats azzerati sopra valori reali. `ensureHydrated`
+    // è la stessa barriera già usata da `hydrateContext`/`useTravelContext` —
+    // nessun nuovo meccanismo, nessuna attesa arbitraria: si risolve non appena
+    // l'idratazione (già in corso o già conclusa) lo è davvero.
+    await contextEngine.ensureHydrated(tripId);
     const context = contextEngine.getContext(tripId);
+    if (context.hydrationStatus !== 'ready') {
+      // Idratazione fallita (vedi ContextEngine.runHydration) o trip nel
+      // frattempo eliminato: mai persistere valori derivati da un placeholder.
+      return;
+    }
+
+    // Progresso allineato al Journey Score 2.0 calcolato dal Context Engine
     const planProgress = context.journeyScore;
     const organizedDaysCount = context.timeline?.days?.filter(d => d.places?.length > 0).length || 0;
 
-    const store = useTripStore.getState();
-    const trip = store.getTripById(tripId);
-    if (trip) {
-      await store.updateTrip(tripId, {
-        progress: planProgress,
-        stats: {
-          ...trip.stats,
-          savedPlaces: savedPlacesCount,
-          organizedDays: organizedDaysCount,
-        }
-      });
+    // `stats` è opzionale nello schema Trip (e il repository restituisce comunque
+    // trip che falliscono la validazione Zod): un trip legacy/deserializzato può
+    // non averlo. Senza il fallback qui, `trip.stats.savedPlaces` lancerebbe e
+    // l'errore verrebbe inghiottito dal catch → progress/stats mai aggiornati.
+    const currentStats = trip.stats ?? {};
+    if (
+      trip.progress === planProgress &&
+      currentStats.savedPlaces === savedPlacesCount &&
+      currentStats.organizedDays === organizedDaysCount
+    ) {
+      return; // Evita loop infiniti e aggiornamenti circolari se lo stato è invariato
     }
+
+    await store.updateTrip(tripId, {
+      progress: planProgress,
+      stats: {
+        ...trip.stats,
+        savedPlaces: savedPlacesCount,
+        organizedDays: organizedDaysCount,
+      }
+    });
   } catch (error) {
     // Ignora errori di aggiornamento su trip mock/non presenti nel repository locale
     if (process.env.NODE_ENV === 'development') {
       // console.debug('[trip.store] Aggiornamento ignorato per trip assente/mock:', tripId);
     }
   }
+});
+
+// Registra il provider dinamico nel Context Engine per risolvere le date e info reali del Trip
+contextEngine.registerTripProvider((id) => {
+  return useTripStore.getState().getTripById(id);
 });

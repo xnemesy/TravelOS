@@ -23,12 +23,19 @@ import {
   translationProvider as mockTranslation,
 } from './mock-travel.providers';
 import { CachedProvider } from './CachedProvider';
+import { MMKVCacheRepository } from './mmkv-cache.repository';
+import { MMKVAdapter } from '../../core/storage/mmkv.adapter';
 import { RealPlacesAdapter } from './real-places.adapter';
 import { PlaceRepository } from '../../core/domain/repositories/PlaceRepository';
 import { MockPlaceRepository } from '../../core/infrastructure/repositories/MockPlaceRepository';
 import { TravelBackendRepository } from '../../core/infrastructure/repositories/TravelBackendRepository';
 
 const USE_REAL_PLACES = process.env.EXPO_PUBLIC_USE_REAL_PLACES === 'true';
+
+// Storage condiviso per la persistenza delle cache (ADR-022): un solo
+// MMKVAdapter, stateless, iniettato in un MMKVCacheRepository per namespace —
+// stesso pattern "un repository per aggregato" di ADR-021.
+const cacheStorageAdapter = new MMKVAdapter();
 
 // Nuovo entry point architetturale per i luoghi (Sprint 12)
 export const placeRepository: PlaceRepository = USE_REAL_PLACES 
@@ -48,13 +55,33 @@ export const placeRepository: PlaceRepository = USE_REAL_PLACES
  */
 
 export class TravelServicesPlatform {
-  // Cache generiche unificate con TTL mirati
-  private weatherCache = new CachedProvider<WeatherCondition | DailyWeatherSummary>('Weather', 30 * 60 * 1000); // 30 min
-  private routingCache = new CachedProvider<RouteEstimate>('Routing', 7 * 24 * 60 * 60 * 1000); // 7 giorni
-  private openingHoursCache = new CachedProvider<TimeWindow[] | PlaceOpeningStatus | boolean>('OpeningHours', 24 * 60 * 60 * 1000); // 24 ore
-  private placesCache = new CachedProvider<PlaceMetadata | PlaceMetadata[] | null>('Places', 7 * 24 * 60 * 60 * 1000); // 7 giorni
-  private currencyCache = new CachedProvider<ExchangeRate | number>('Currency', 12 * 60 * 60 * 1000); // 12 ore
-  private translationCache = new CachedProvider<string>('Translation', 30 * 24 * 60 * 60 * 1000); // 30 giorni
+  // Cache generiche unificate con TTL mirati — persistite in MMKV (ADR-022),
+  // sopravvivono al riavvio dell'app in modo trasparente (nessun cambiamento
+  // alla firma o al comportamento di .get()/.set() rispetto a prima).
+  private weatherCache = new CachedProvider<WeatherCondition | DailyWeatherSummary>('Weather', 30 * 60 * 1000, {
+    repository: new MMKVCacheRepository('Weather', cacheStorageAdapter),
+    maxEntries: 200,
+  });
+  private routingCache = new CachedProvider<RouteEstimate>('Routing', 7 * 24 * 60 * 60 * 1000, {
+    repository: new MMKVCacheRepository('Routing', cacheStorageAdapter),
+    maxEntries: 200,
+  });
+  private openingHoursCache = new CachedProvider<TimeWindow[] | PlaceOpeningStatus | boolean>('OpeningHours', 24 * 60 * 60 * 1000, {
+    repository: new MMKVCacheRepository('OpeningHours', cacheStorageAdapter),
+    maxEntries: 200,
+  });
+  private placesCache = new CachedProvider<PlaceMetadata | PlaceMetadata[] | null>('Places', 7 * 24 * 60 * 60 * 1000, {
+    repository: new MMKVCacheRepository('Places', cacheStorageAdapter),
+    maxEntries: 300,
+  });
+  private currencyCache = new CachedProvider<ExchangeRate | number>('Currency', 12 * 60 * 60 * 1000, {
+    repository: new MMKVCacheRepository('Currency', cacheStorageAdapter),
+    maxEntries: 100,
+  });
+  private translationCache = new CachedProvider<string>('Translation', 30 * 24 * 60 * 60 * 1000, {
+    repository: new MMKVCacheRepository('Translation', cacheStorageAdapter),
+    maxEntries: 500,
+  });
 
   // Adattatori reali opzionali (quando pronti in sprint futuri: Google, Apple, OpenMeteo)
   private realWeatherAdapter: WeatherProviderAdapter | null = null;

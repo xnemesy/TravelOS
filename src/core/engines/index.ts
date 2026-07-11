@@ -1,6 +1,10 @@
 import { ContextEngine } from './context/context.engine';
 import { PlacesEngine } from './places/places.engine';
 import { TimelineEngine } from './timeline/timeline.engine';
+import { MMKVAdapter } from '../storage/mmkv.adapter';
+import { PlacesRepository } from './places/places.repository';
+import { TimelineRepository } from './timeline/timeline.repository';
+import { TripRepository } from '../../domain/trip/repositories/trip.repository';
 
 /**
  * ============================================================================
@@ -8,14 +12,30 @@ import { TimelineEngine } from './timeline/timeline.engine';
  * ============================================================================
  * Inizializza e collega le singole istanze singleton degli Engine core
  * per la Fase 1 di Travel OS: Context, Places e Timeline.
+ *
+ * ADR-021 (Repository Abstraction): unico punto in cui gli Engine vengono
+ * legati a un'implementazione concreta di persistenza. Gli Engine stessi
+ * dipendono solo dalle interfacce (`I*Repository`) — MMKV/AsyncStorage restano
+ * un dettaglio noto esclusivamente qui e dentro le implementazioni concrete.
  */
+const storageAdapter = new MMKVAdapter();
+const placesRepository = new PlacesRepository(storageAdapter);
+// TimelineRepository risolve l'intervallo di date del trip delegando a
+// ITripRepository (non conosce la chiave/formato del repository dei Trip).
+// Istanza indipendente da quella di `trip.store.ts` (stesso storage
+// sottostante, `TripRepository` è stateless — nessuna cache propria, quindi
+// due istanze restano sempre coerenti) per evitare un import circolare:
+// `trip.store.ts` già importa da questo stesso file (`placesEngine`/
+// `timelineEngine`/`contextEngine`).
+const tripRepositoryForTimeline = new TripRepository(storageAdapter);
+const timelineRepository = new TimelineRepository(storageAdapter, tripRepositoryForTimeline);
 
 // 1. Inizializza il Context Engine (il compositore reattivo)
 export const contextEngine = new ContextEngine();
 
-// 2. Inizializza i motori di dominio della Fase 1 iniettando il compositore
-export const placesEngine = new PlacesEngine(contextEngine);
-export const timelineEngine = new TimelineEngine(contextEngine);
+// 2. Inizializza i motori di dominio della Fase 1 iniettando il compositore e il proprio repository
+export const placesEngine = new PlacesEngine(contextEngine, placesRepository);
+export const timelineEngine = new TimelineEngine(contextEngine, timelineRepository);
 
 import { allMockPlaces } from '../../features/trips/mock/budapest.mock';
 import { PlaceRef } from './types/context.types';
@@ -27,14 +47,16 @@ export const engines = {
   timeline: timelineEngine,
 };
 
-// Metodo per forzare il caricamento asincrono e sincronizzare il ContextEngine
-export async function hydrateContext(tripId: string) {
+// Forza (e attende) l'idratazione completa del ContextEngine per un trip — utile
+// per schermate che vogliono mostrare uno stato di caricamento esplicito prima
+// di renderizzare (es. `isHydrating` locale). Non è più l'unico modo in cui
+// l'idratazione parte: `useTravelContext`/`ContextEngine.getContext` la
+// innescano automaticamente al primo accesso (ADR-020) — questa funzione
+// delega allo stesso `ensureHydrated`, quindi è idempotente e mai ridondante
+// rispetto a un'idratazione già in corso o già conclusa.
+export async function hydrateContext(tripId: string): Promise<void> {
   const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
-  await placesEngine.getSavedPlaces(cleanTripId);
-  await timelineEngine.getTripTimeline(cleanTripId);
-
-  // Nessun Domain Fact: l'idratazione non è un evento di dominio, è ricomposizione diretta.
-  contextEngine.recompose(cleanTripId);
+  await contextEngine.ensureHydrated(cleanTripId);
 }
 
 // Re-export dei tipi core
