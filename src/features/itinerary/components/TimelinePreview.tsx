@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Typography } from '../../../../src/shared/components/Typography';
-import { useTimeline, useTravelActions } from '../../../../src/shared/hooks';
+import { useTimeline, useTravelActions, useSetupProgress } from '../../../../src/shared/hooks';
 import { formatDistance } from '../../../../src/shared/utils/distance.utils';
 import { TimelineGenerator } from '../../../../src/domain/services/TimelineGenerator';
 import { OptimizationReportFormatter } from '../utils/OptimizationReportFormatter';
@@ -12,6 +12,7 @@ import { usePlannerStore } from '../../../../src/features/itinerary/store/planne
 import Animated, { useAnimatedStyle, withTiming, useSharedValue } from 'react-native-reanimated';
 import { EmptyState } from '../../../../src/shared/components/EmptyState';
 import { Swipeable } from 'react-native-gesture-handler';
+import { SetupIncompleteGate } from '../../trips/setup-progress/components/SetupIncompleteGate';
 
 const getNarrativeSeparator = (place: any, index: number) => {
   if (index === 0 && place.category !== 'breakfast') return '☀️ Inizia la giornata';
@@ -43,6 +44,7 @@ export const TimelinePreview: React.FC<TimelinePreviewProps> = ({ tripId }) => {
   const { days, currentDayNumber } = useTimeline(tripId);
   const actions = useTravelActions();
   const { isAdvancedMode } = usePlannerStore();
+  const setupProgress = useSetupProgress(tripId);
   const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set([currentDayNumber || 1]));
 
   const toggleDay = (dayNumber: number) => {
@@ -60,6 +62,14 @@ export const TimelinePreview: React.FC<TimelinePreviewProps> = ({ tripId }) => {
       return next;
     });
   };
+
+  if (!setupProgress.plannerUnlocked) {
+    return (
+      <View className="my-4 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+        <SetupIncompleteGate tripId={tripId} missingSections={setupProgress.missingSections} className="py-6 px-2" />
+      </View>
+    );
+  }
 
   const currentDays = days && days.length > 0 ? days : [{ dayNumber: 1 }, { dayNumber: 2 }, { dayNumber: 3 }] as any;
 

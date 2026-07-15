@@ -15,16 +15,10 @@ export interface PlaceDetailsResult {
  * ============================================================================
  * Hook UI che maschera la complessità della risoluzione dei luoghi.
  *
- * `PlaceQueryService` risolve il "salvato" contro `IPlaceRepository`
- * (`InMemoryPlaceRepository`/`allMockPlaces` in `place.store.ts`) — un
- * repository statico del percorso legacy `domain/trip`, **non** la stessa
- * fonte di `PlacesEngine`/MMKV (`places_${tripId}`) che `usePlaces()` e
- * `actions.savePlace()` usano davvero. Per non regredire sul comportamento
- * dei luoghi già salvati (requisito esplicito del fix), questo hook
- * controlla prima `usePlaces(tripId).savedPlaces` — invariato, sincrono,
- * stessa fonte di prima del fix — e delega a `PlaceQueryService` solo
- * quando il luogo non è tra i salvati reali (ricerca live, catalogo
- * editoriale, o qualunque altro luogo transiente).
+ * `PlaceQueryService` risolve i luoghi controllando prima `placesEngine`
+ * (stessa fonte di `usePlaces()` e MMKV `places_${tripId}`)
+ * e delegal'ottenimento dei dettagli al Place Provider o al Catalogo
+ * editoriale quando il luogo non è ancora nei salvati.
  */
 export function usePlaceDetails(tripId: string | string[], placeId: string | string[]): PlaceDetailsResult {
   const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');

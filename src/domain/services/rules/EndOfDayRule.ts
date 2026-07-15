@@ -11,18 +11,20 @@ export class EndOfDayRule implements ITimelineRule {
 
     const preferredEndTimeStr = context.userPreferences?.preferredEndTime || '22:00';
     const [h, m] = preferredEndTimeStr.split(':').map(Number);
-    const limitMinutes = h * 60 + m;
+    const prefLimitMinutes = h * 60 + m;
+    const limitMinutes = context.effectiveDayEnd !== undefined ? context.effectiveDayEnd : prefLimitMinutes;
 
     if (context.currentTimeMinutes >= limitMinutes) {
       return {
         scoreDelta: -1000,
         reject: true,
-        explanation: `Orario corrente ha superato il limite di fine giornata (${preferredEndTimeStr}).`
+        explanation: `Orario corrente ha superato il limite di fine giornata effettiva.`
       };
     }
 
     const estimatedDuration = candidate.durationMinutes || 60;
-    if (context.currentTimeMinutes + estimatedDuration > limitMinutes + 30) {
+    const tolerance = context.effectiveDayEnd !== undefined ? 0 : 30;
+    if (context.currentTimeMinutes + estimatedDuration > limitMinutes + tolerance) {
       return {
         scoreDelta: -800,
         reject: true,

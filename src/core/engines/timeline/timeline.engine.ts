@@ -1,7 +1,8 @@
-import { ITimelineEngine, IContextEngine } from '../types/engines.types';
-import { TimelineDaySchedule, PlaceRef, TravelContext } from '../types/context.types';
+import { ITimelineEngine, IContextEngine, ITripSetupEngine } from '../types/engines.types';
+import { TimelineDaySchedule, PlaceRef, TravelContext, JourneyAnchor } from '../types/context.types';
 import { TimelineGenerator } from '../../../domain/services/TimelineGenerator';
 import { journeyComposer } from '../../../domain/services/JourneyComposer';
+import { JourneyAnchorEngine } from '../../../domain/services/JourneyAnchorEngine';
 import { eventBus } from '../../events/event-bus';
 import { ITimelineRepository } from './timeline.repository.interface';
 
@@ -21,7 +22,60 @@ export class TimelineEngine implements ITimelineEngine {
   private timelineMap: Map<string, TimelineDaySchedule[]> = new Map();
   private contextEngine: IContextEngine;
 
-  constructor(contextEngine: IContextEngine, private repository: ITimelineRepository) {
+  /**
+   * `tripSetupEngine` è opzionale (retrocompatibile con i test/istanze
+   * esistenti che costruiscono TimelineEngine con solo 2 argomenti): quando
+   * assente, il Composer opera senza Journey Anchors — comportamento
+   * identico a prima di questa integrazione. Quando presente, TimelineEngine
+   * legge transports/accommodations dal TripSetupEngine (mai storage/MMKV
+   * direttamente — stesso confine di responsabilità di ITimelineRepository)
+   * e li trasforma in Journey Anchors tramite JourneyAnchorEngine, un
+   * servizio di dominio puro. JourneyComposer non cambia: riceve solo un
+   * parametro `anchors` già supportato dalla sua firma esistente.
+   */
+  /**
+   * BUG 5: Gestione della DeferredQueue. Preserva l'ordine originale tra pari priorità,
+   * dà precedenza agli elementi Must-See/Hero ed evita di spostare o alterare elementi bloccati/pinned.
+   */
+  public static filterAndSortDeferredQueue(
+    poolForDay: PlaceRef[],
+    placedIds: Set<string>,
+    existingRealIds?: Set<string>
+  ): PlaceRef[] {
+    const unplaced = poolForDay.filter((p) => {
+      if (placedIds.has(p.id)) return false;
+      if (existingRealIds && existingRealIds.has(p.id) && (p.isLocked || p.anchorType === 'SOFT' || p.anchorType === 'HARD' || p.scheduledTime)) {
+        return false;
+      }
+      return true;
+    });
+
+    const getPriorityTier = (p: PlaceRef): number => {
+      const isMustSee = p.role === 'hero_experience' || p.priority === 'must_see' || (p as any).mustSee === true || (p as any).priority === 'high';
+      if (isMustSee) return 1;
+      const isPinned = p.isLocked === true || p.anchorType === 'SOFT';
+      if (isPinned) return 2;
+      const isRecommended = p.priority === 'recommended' || p.role === 'secondary';
+      if (isRecommended) return 3;
+      return 4;
+    };
+
+    return unplaced
+      .map((item, index) => ({ item, index, tier: getPriorityTier(item) }))
+      .sort((a, b) => {
+        if (a.tier !== b.tier) {
+          return a.tier - b.tier;
+        }
+        return a.index - b.index;
+      })
+      .map(entry => entry.item);
+  }
+
+  constructor(
+    contextEngine: IContextEngine,
+    private repository: ITimelineRepository,
+    private tripSetupEngine?: ITripSetupEngine
+  ) {
     this.contextEngine = contextEngine;
 
     // Registra la propria slice di stato nel Context Engine per la composizione reattiva
@@ -58,6 +112,62 @@ export class TimelineEngine implements ITimelineEngine {
         await this.removePlaceFromAllDays(event.tripId, payload.placeId);
       }
     });
+
+    const setupEvents = [
+      'TransportAdded',
+      'TransportUpdated',
+      'TransportRemoved',
+      'AccommodationAdded',
+      'AccommodationUpdated',
+      'AccommodationRemoved',
+    ] as const;
+    setupEvents.forEach((eventType) => {
+      eventBus.subscribe(eventType, async (event) => {
+        if (event.tripId) {
+          await this.invalidateTimeline(event.tripId);
+        }
+      });
+    });
+  }
+
+  public async invalidateTimeline(tripId: string): Promise<void> {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    this.timelineMap.delete(cleanTripId);
+    if (this.tripSetupEngine) {
+      const persisted = await this.repository.getTimeline(cleanTripId);
+      if (persisted && persisted.length > 0) {
+        const freshAnchors = await this.getTripAnchors(cleanTripId);
+        let deferredQueue: PlaceRef[] = [];
+        const updatedDays: TimelineDaySchedule[] = [];
+
+        for (let i = 0; i < persisted.length; i++) {
+          const day = persisted[i];
+          const dayAnchors = JourneyAnchorEngine.getAnchorsForDate(freshAnchors, day.date);
+          const existingReal = day.places.filter(
+            (p) => !p.isBlock && !p.journeyAnchorKind && p.category !== 'hotel' && p.category !== 'transfer'
+          );
+          const existingRealIds = new Set(existingReal.map(p => p.id));
+          const poolForDay = [...existingReal, ...deferredQueue];
+
+          const newSchedule = await journeyComposer.compose({
+            availablePlaces: poolForDay,
+            travelStyle: 'culture',
+            targetDay: day.dayNumber,
+            dateStr: day.date,
+            currentSchedule: { ...day, anchors: dayAnchors },
+            anchors: dayAnchors,
+          });
+
+          updatedDays.push(newSchedule);
+          const placedIds = new Set(newSchedule.places.map((p) => p.id));
+          deferredQueue = TimelineEngine.filterAndSortDeferredQueue(poolForDay, placedIds, existingRealIds);
+        }
+
+        this.timelineMap.set(cleanTripId, updatedDays);
+        await this.repository.saveTimeline(cleanTripId, updatedDays);
+        this.publishStateSlice(cleanTripId);
+      }
+    }
   }
 
   /**
@@ -119,8 +229,16 @@ export class TimelineEngine implements ITimelineEngine {
     if (!this.timelineMap.has(cleanTripId)) {
       const persisted = await this.repository.getTimeline(cleanTripId);
       if (persisted && persisted.length > 0) {
+        let hydratedDays = persisted;
+        if (this.tripSetupEngine) {
+          const freshAnchors = await this.getTripAnchors(cleanTripId);
+          hydratedDays = persisted.map((day) => ({
+            ...day,
+            anchors: JourneyAnchorEngine.getAnchorsForDate(freshAnchors, day.date),
+          }));
+        }
         // Deserializza correttamente e carica in cache
-        this.timelineMap.set(cleanTripId, persisted);
+        this.timelineMap.set(cleanTripId, hydratedDays);
       } else {
         // Carica i dettagli del viaggio per calcolarne la durata reale
         const dateRange = await this.repository.getTripDateRange(cleanTripId);
@@ -329,20 +447,39 @@ export class TimelineEngine implements ITimelineEngine {
     
     if (unassignedPlaces.length === 0 || timeline.length === 0) return;
 
-    // Semplice logica: distribuisce i luoghi equamente sui giorni disponibili
+    const anchors = await this.getTripAnchors(cleanTripId);
     const placesPerDay = Math.ceil(unassignedPlaces.length / timeline.length);
     let currentPlaceIndex = 0;
+    let deferredQueue: PlaceRef[] = [];
 
     const newTimeline = [...timeline];
     for (let i = 0; i < newTimeline.length; i++) {
-      const day = newTimeline[i];
-      const placesToAdd = unassignedPlaces.slice(currentPlaceIndex, currentPlaceIndex + placesPerDay);
+      const currentSchedule = newTimeline[i];
+      const sliceForDay = unassignedPlaces.slice(currentPlaceIndex, currentPlaceIndex + placesPerDay);
       currentPlaceIndex += placesPerDay;
 
-      if (placesToAdd.length > 0) {
-        const updatedPlaces = [...day.places, ...placesToAdd];
-        newTimeline[i] = TimelineGenerator.generateDaySchedule(day.dayNumber, day.date, updatedPlaces);
+      const existingReal = currentSchedule.places.filter(
+        (p) => !p.isBlock && !p.journeyAnchorKind && p.category !== 'hotel' && p.category !== 'transfer'
+      );
+      const existingRealIds = new Set(existingReal.map(p => p.id));
+      const poolForDay = [...existingReal, ...deferredQueue, ...sliceForDay];
+
+      if (poolForDay.length === 0 && currentPlaceIndex >= unassignedPlaces.length && deferredQueue.length === 0) {
+        break;
       }
+
+      const newSchedule = await journeyComposer.compose({
+        availablePlaces: poolForDay,
+        travelStyle: profileId,
+        targetDay: currentSchedule.dayNumber,
+        dateStr: currentSchedule.date,
+        currentSchedule,
+        anchors,
+      });
+
+      newTimeline[i] = newSchedule;
+      const placedIds = new Set(newSchedule.places.map((p) => p.id));
+      deferredQueue = TimelineEngine.filterAndSortDeferredQueue(poolForDay, placedIds, existingRealIds);
     }
 
     this.timelineMap.set(cleanTripId, newTimeline);
@@ -363,14 +500,36 @@ export class TimelineEngine implements ITimelineEngine {
     });
   }
 
+  /**
+   * Legge transports/accommodations dal TripSetupEngine (se collegato) e li
+   * traduce in Journey Anchors tramite JourneyAnchorEngine (ADR-018 §3.1/3.2
+   * → redesign JourneyComposer). Nessun anchor se il TripSetup non ha ancora
+   * né trasporti né alloggi: giornata senza vincoli, comportamento invariato.
+   */
+  private async getTripAnchors(tripId: string): Promise<JourneyAnchor[]> {
+    if (!this.tripSetupEngine) return [];
+    const [transports, accommodations] = await Promise.all([
+      this.tripSetupEngine.getTransports(tripId),
+      this.tripSetupEngine.getAccommodations(tripId),
+    ]);
+    if (transports.length === 0 && accommodations.length === 0) return [];
+    return JourneyAnchorEngine.buildTripAnchors(transports, accommodations);
+  }
+
   public async optimizeDayTimeline(tripId: string, dayNumber: number, profileId: string = 'culture'): Promise<void> {
     const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
     const timeline = await this.getTripTimeline(cleanTripId);
     const dayIdx = timeline.findIndex((d) => d.dayNumber === dayNumber);
 
     if (dayIdx !== -1) {
+      const anchors = await this.getTripAnchors(cleanTripId);
       const newTimeline = [...timeline];
-      newTimeline[dayIdx] = await TimelineGenerator.optimizeDayRouteWithSIP(newTimeline[dayIdx], profileId);
+      newTimeline[dayIdx] = await journeyComposer.composeDayJourneyWithSIP(
+        newTimeline[dayIdx],
+        profileId,
+        undefined,
+        anchors
+      );
 
       this.timelineMap.set(cleanTripId, newTimeline);
       await this.repository.saveTimeline(cleanTripId, newTimeline);
@@ -405,17 +564,41 @@ export class TimelineEngine implements ITimelineEngine {
       dayIdx = timeline.length - 1;
     }
 
-    const currentSchedule = timeline[dayIdx];
-    const newSchedule = await journeyComposer.compose({
-      availablePlaces,
-      travelStyle: styleId,
-      targetDay: dayNumber,
-      dateStr: currentSchedule.date,
-      currentSchedule,
-    });
-
+    const anchors = await this.getTripAnchors(cleanTripId);
     const newTimeline = [...timeline];
-    newTimeline[dayIdx] = newSchedule;
+    let deferredQueue = [...availablePlaces];
+
+    for (let i = dayIdx; i < newTimeline.length; i++) {
+      const currentSchedule = newTimeline[i];
+      const existingReal = i === dayIdx 
+        ? [] 
+        : currentSchedule.places.filter(
+            (p) => !p.isBlock && !p.journeyAnchorKind && p.category !== 'hotel' && p.category !== 'transfer'
+          );
+      const existingRealIds = new Set(existingReal.map(p => p.id));
+      const poolForDay = [...existingReal, ...deferredQueue];
+
+      if (poolForDay.length === 0 && i > dayIdx) {
+        break;
+      }
+
+      const newSchedule = await journeyComposer.compose({
+        availablePlaces: poolForDay,
+        travelStyle: styleId,
+        targetDay: currentSchedule.dayNumber,
+        dateStr: currentSchedule.date,
+        currentSchedule,
+        anchors,
+      });
+
+      newTimeline[i] = newSchedule;
+      const placedIds = new Set(newSchedule.places.map((p) => p.id));
+      deferredQueue = TimelineEngine.filterAndSortDeferredQueue(poolForDay, placedIds, existingRealIds);
+
+      if (deferredQueue.length === 0) {
+        break;
+      }
+    }
 
     this.timelineMap.set(cleanTripId, newTimeline);
     await this.repository.saveTimeline(cleanTripId, newTimeline);
@@ -427,7 +610,7 @@ export class TimelineEngine implements ITimelineEngine {
       tripId: cleanTripId,
       payload: {
         dayNumber,
-        orderedPlaceIds: newSchedule.places.map((p) => p.id),
+        orderedPlaceIds: newTimeline[dayIdx].places.map((p) => p.id),
       },
     });
   }

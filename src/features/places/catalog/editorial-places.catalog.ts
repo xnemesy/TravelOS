@@ -1,5 +1,3 @@
-import { ExternalPlace } from '../../../domain/trip/models/place.model';
-
 /**
  * ============================================================================
  * CATALOGO EDITORIALE LOCALE - LUOGHI E COLLEZIONI CURATE
@@ -8,6 +6,22 @@ import { ExternalPlace } from '../../../domain/trip/models/place.model';
  * per aiutare l'utente a CONSTRUIRE la propria esperienza di viaggio con
  * suggerimenti unici, note del curatore e durata consigliata.
  */
+
+export interface EditorialBaseData {
+  providerId?: string;
+  name: string;
+  category: string;
+  coverImageUrl?: string;
+  photoUrls?: string[];
+  location: {
+    address?: string;
+    coordinates?: { lat: number; lng: number };
+    appleMapsUrl?: string;
+    googleMapsUrl?: string;
+  };
+  rating?: number;
+  reviewsCount?: number;
+}
 
 export type EditorialCollectionTag = 
   | 'imperdibili'      // ⭐ Imperdibili
@@ -38,7 +52,7 @@ export const EDITORIAL_COLLECTIONS: EditorialCollection[] = [
 export interface EditorialPlaceItem {
   id: string;
   destinationName: string; // es. "Budapest", "Kyoto", "Parigi", "Roma"
-  baseData: ExternalPlace;
+  baseData: EditorialBaseData;
   collections: EditorialCollectionTag[];
   editorialNote: string; // La voce del curatore di Travel OS
   recommendedDurationMinutes: number;

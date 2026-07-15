@@ -203,7 +203,7 @@ export class GooglePlacesProvider implements PlacesProvider {
           providerPlaceId: pred.placeId,
           name: pred.structuredFormat?.mainText?.text || pred.text?.text || '',
           categories: ['attraction'],
-          coordinates: { latitude: 0, longitude: 0 },
+          coordinates: undefined,
           formattedAddress: pred.structuredFormat?.secondaryText?.text,
         } as Place;
       });

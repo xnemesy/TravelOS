@@ -1,5 +1,6 @@
-import { placesEngine, timelineEngine } from '../../core/engines';
+import { placesEngine, timelineEngine, tripSetupEngine } from '../../core/engines';
 import { PlaceRef } from '../../core/engines/types/context.types';
+import { Transport, Accommodation } from '../../domain/trip/models/trip-setup.model';
 
 export interface TravelActions {
   savePlace: (tripId: string, place: PlaceRef) => Promise<void>;
@@ -10,6 +11,21 @@ export interface TravelActions {
   removePlaceFromDay: (tripId: string, dayNumber: number, placeId: string) => Promise<void>;
   movePlaceUp: (placeId: string, tripId: string, dayNumber: number) => Promise<void>;
   movePlaceDown: (placeId: string, tripId: string, dayNumber: number) => Promise<void>;
+  addTransport: (tripId: string, transport: Omit<Transport, 'id'>) => Promise<Transport>;
+  updateTransport: (tripId: string, transportId: string, updates: Partial<Omit<Transport, 'id'>>) => Promise<Transport>;
+  removeTransport: (tripId: string, transportId: string) => Promise<void>;
+  addAccommodation: (tripId: string, accommodation: Omit<Accommodation, 'id'>) => Promise<Accommodation>;
+  updateAccommodation: (
+    tripId: string,
+    accommodationId: string,
+    updates: Partial<Omit<Accommodation, 'id'>>
+  ) => Promise<Accommodation>;
+  removeAccommodation: (tripId: string, accommodationId: string) => Promise<void>;
+  syncTransportsAndAccommodations: (
+    tripId: string,
+    transports: Transport[],
+    accommodations: Accommodation[]
+  ) => Promise<unknown>;
 }
 
 /**
@@ -113,6 +129,53 @@ export function useTravelActions(): TravelActions {
     }
   };
 
+  const addTransport = async (tripId: string | string[], transport: Omit<Transport, 'id'>) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    return tripSetupEngine.addTransport(cleanTripId, transport);
+  };
+
+  const updateTransport = async (
+    tripId: string | string[],
+    transportId: string,
+    updates: Partial<Omit<Transport, 'id'>>
+  ) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    return tripSetupEngine.updateTransport(cleanTripId, transportId, updates);
+  };
+
+  const removeTransport = async (tripId: string | string[], transportId: string) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    await tripSetupEngine.removeTransport(cleanTripId, transportId);
+  };
+
+  const addAccommodation = async (tripId: string | string[], accommodation: Omit<Accommodation, 'id'>) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    return tripSetupEngine.addAccommodation(cleanTripId, accommodation);
+  };
+
+  const updateAccommodation = async (
+    tripId: string | string[],
+    accommodationId: string,
+    updates: Partial<Omit<Accommodation, 'id'>>
+  ) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    return tripSetupEngine.updateAccommodation(cleanTripId, accommodationId, updates);
+  };
+
+  const removeAccommodation = async (tripId: string | string[], accommodationId: string) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    await tripSetupEngine.removeAccommodation(cleanTripId, accommodationId);
+  };
+
+  const syncTransportsAndAccommodations = async (
+    tripId: string | string[],
+    transports: Transport[],
+    accommodations: Accommodation[]
+  ) => {
+    const cleanTripId = Array.isArray(tripId) ? tripId[0] : String(tripId || '');
+    return tripSetupEngine.syncTransportsAndAccommodations(cleanTripId, transports, accommodations);
+  };
+
   return {
     savePlace,
     removePlace,
@@ -122,5 +185,12 @@ export function useTravelActions(): TravelActions {
     removePlaceFromDay,
     movePlaceUp,
     movePlaceDown,
+    addTransport,
+    updateTransport,
+    removeTransport,
+    addAccommodation,
+    updateAccommodation,
+    removeAccommodation,
+    syncTransportsAndAccommodations,
   };
 }

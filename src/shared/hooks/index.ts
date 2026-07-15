@@ -17,3 +17,6 @@ export * from './useWeather';
 export * from './usePlaces';
 export * from './usePlaceDetails';
 export * from './useTravelActions';
+export * from './useTransports';
+export * from './useAccommodations';
+export * from './useSetupProgress';

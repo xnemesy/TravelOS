@@ -102,6 +102,9 @@ export const TextField = React.forwardRef<TextInput, TextFieldProps>(
             onBlur={handleBlur}
             placeholderTextColor="#9CA3AF"
             textAlignVertical={multiline ? 'top' : 'center'}
+            accessibilityLabel={label}
+            accessibilityHint={error || helperText}
+            accessibilityState={{ disabled }}
             className={`flex-1 text-gray-900 ${
               multiline
                 ? 'text-base text-top'
@@ -120,6 +123,9 @@ export const TextField = React.forwardRef<TextInput, TextFieldProps>(
             <Pressable
               onPress={() => setIsPasswordVisible(!isPasswordVisible)}
               className="p-1 -mr-1"
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={isPasswordVisible ? 'Nascondi password' : 'Mostra password'}
             >
               <Ionicons
                 name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
@@ -132,6 +138,8 @@ export const TextField = React.forwardRef<TextInput, TextFieldProps>(
               onPress={onRightIconPress}
               disabled={!onRightIconPress}
               className="p-1 -mr-1"
+              hitSlop={6}
+              accessibilityRole={onRightIconPress ? 'button' : undefined}
             >
               <Ionicons name={rightIcon} size={18} color="#9CA3AF" />
             </Pressable>

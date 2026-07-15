@@ -1,9 +1,11 @@
 import { ContextEngine } from './context/context.engine';
 import { PlacesEngine } from './places/places.engine';
 import { TimelineEngine } from './timeline/timeline.engine';
+import { TripSetupEngine } from './trip-setup/trip-setup.engine';
 import { MMKVAdapter } from '../storage/mmkv.adapter';
 import { PlacesRepository } from './places/places.repository';
 import { TimelineRepository } from './timeline/timeline.repository';
+import { TripSetupRepository } from './trip-setup/trip-setup.repository';
 import { TripRepository } from '../../domain/trip/repositories/trip.repository';
 
 /**
@@ -20,6 +22,7 @@ import { TripRepository } from '../../domain/trip/repositories/trip.repository';
  */
 const storageAdapter = new MMKVAdapter();
 const placesRepository = new PlacesRepository(storageAdapter);
+const tripSetupRepository = new TripSetupRepository(storageAdapter);
 // TimelineRepository risolve l'intervallo di date del trip delegando a
 // ITripRepository (non conosce la chiave/formato del repository dei Trip).
 // Istanza indipendente da quella di `trip.store.ts` (stesso storage
@@ -35,16 +38,18 @@ export const contextEngine = new ContextEngine();
 
 // 2. Inizializza i motori di dominio della Fase 1 iniettando il compositore e il proprio repository
 export const placesEngine = new PlacesEngine(contextEngine, placesRepository);
-export const timelineEngine = new TimelineEngine(contextEngine, timelineRepository);
-
-import { allMockPlaces } from '../../features/trips/mock/budapest.mock';
-import { PlaceRef } from './types/context.types';
+// Transport Setup module (ADR-018 §7, adozione parziale — solo `transports`/
+// `accommodations`). Costruito prima di TimelineEngine perché quest'ultimo lo
+// riceve in iniezione per derivare i Journey Anchors (redesign JourneyComposer).
+export const tripSetupEngine = new TripSetupEngine(contextEngine, tripSetupRepository);
+export const timelineEngine = new TimelineEngine(contextEngine, timelineRepository, tripSetupEngine);
 
 // Registry unificato
 export const engines = {
   context: contextEngine,
   places: placesEngine,
   timeline: timelineEngine,
+  tripSetup: tripSetupEngine,
 };
 
 // Forza (e attende) l'idratazione completa del ContextEngine per un trip — utile

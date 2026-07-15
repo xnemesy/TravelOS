@@ -15,7 +15,7 @@ export const PlaceSchema = z.object({
   coordinates: z.object({
     latitude: z.number(),
     longitude: z.number(),
-  }),
+  }).optional(),
   
   openingHours: z.array(z.string()).optional(),
   priceLevel: z.number().optional(),

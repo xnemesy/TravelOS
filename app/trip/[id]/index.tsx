@@ -442,7 +442,29 @@ export default function TripHomeScreen() {
               <Typography variant="bodySemibold" className="text-gray-900 text-base">Modifica viaggio</Typography>
             </Pressable>
 
-            <Pressable 
+            <Pressable
+              onPress={() => {
+                setShowMenu(false);
+                router.push(`/trip/${tripId}/transport` as any);
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-gray-50"
+            >
+              <Ionicons name="airplane-outline" size={22} color="#1C1C1E" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-gray-900 text-base">Trasporti</Typography>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setShowMenu(false);
+                router.push(`/trip/${tripId}/accommodation` as any);
+              }}
+              className="flex-row items-center p-4 rounded-2xl active:bg-gray-50"
+            >
+              <Ionicons name="bed-outline" size={22} color="#1C1C1E" className="mr-3.5" />
+              <Typography variant="bodySemibold" className="text-gray-900 text-base">Alloggi</Typography>
+            </Pressable>
+
+            <Pressable
               onPress={async () => {
                 setShowMenu(false);
                 await duplicateTrip(tripId);

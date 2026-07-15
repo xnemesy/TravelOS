@@ -91,22 +91,64 @@ export class OptimizationReportFormatter {
 
   public static generateWhyDayWorks(places: any[], totalWalkDistanceMeters?: number): string {
     if (!places || places.length === 0) return '';
-    const mainAttractions = places.filter(p => p.category !== 'breakfast' && p.category !== 'lunch' && p.category !== 'dinner' && p.category !== 'drinks' && p.category !== 'free_time');
-    
-    if (mainAttractions.length === 0) {
-      return "Ho strutturato questa giornata per lasciarti il massimo respiro, riducendo gli spostamenti e permettendoti di godere l'atmosfera della città con ritmi lenti e rilassati.";
+    const realVisits = places.filter(p => 
+      !p.isBlock && 
+      !p.journeyAnchorKind && 
+      p.category !== 'hotel' && 
+      p.category !== 'transfer' && 
+      p.category !== 'breakfast' && 
+      p.category !== 'lunch' && 
+      p.category !== 'dinner' && 
+      p.category !== 'drinks' && 
+      p.category !== 'free_time'
+    );
+
+    const firstItemTime = places[0]?.calculatedStartTime || places[0]?.scheduledTime || '';
+    let startHours = 9;
+    if (typeof firstItemTime === 'string' && firstItemTime.includes(':')) {
+      startHours = parseInt(firstItemTime.split(':')[0], 10);
+    } else if (firstItemTime instanceof Date) {
+      startHours = firstItemTime.getHours();
+    } else if (typeof firstItemTime === 'string' && firstItemTime.includes('T')) {
+      startHours = new Date(firstItemTime).getHours();
     }
 
-    const firstPlace = mainAttractions[0];
-    const secondPlace = mainAttractions[1];
+    if (realVisits.length === 0) {
+      const hasArrival = places.some(p => p.journeyAnchorKind && p.journeyAnchorKind.includes('arrival'));
+      if (startHours >= 20 || (hasArrival && startHours >= 18)) {
+        return "Oggi il viaggio è dedicato all'arrivo. Hai poco tempo utile prima della notte, quindi il planner ha evitato di programmare visite e ti accompagna direttamente verso l'alloggio per iniziare il viaggio riposato.";
+      }
+      return "Nessuna esperienza è stata pianificata perché il tempo disponibile non consentirebbe una visita completa e rilassata. Il percorso si concentra sugli spostamenti e sulla logistica del viaggio.";
+    }
+
+    const firstPlace = realVisits[0];
+    const secondPlace = realVisits[1];
     
     let text = "";
     const nameLower = firstPlace.name ? firstPlace.name.toLowerCase() : "";
     
-    if (nameLower.includes('parlamento') || nameLower.includes('museo') || nameLower.includes('basilica') || nameLower.includes('castello') || nameLower.includes('galleria') || firstPlace.category === 'museum') {
-      text += `Ho iniziato da ${firstPlace.name} perché apre presto al mattino ed è il momento ideale per visitarlo con meno affollamento e tempi di attesa ridotti.`;
+    const firstVisitTime = firstPlace.calculatedStartTime || firstPlace.scheduledTime || '';
+    let firstVisitHours = startHours;
+    if (typeof firstVisitTime === 'string' && firstVisitTime.includes(':')) {
+      firstVisitHours = parseInt(firstVisitTime.split(':')[0], 10);
+    } else if (firstVisitTime instanceof Date) {
+      firstVisitHours = firstVisitTime.getHours();
+    } else if (typeof firstVisitTime === 'string' && firstVisitTime.includes('T')) {
+      firstVisitHours = new Date(firstVisitTime).getHours();
+    }
+
+    if (firstVisitHours >= 14) {
+      if (nameLower.includes('parlamento') || nameLower.includes('museo') || nameLower.includes('basilica') || nameLower.includes('castello') || nameLower.includes('galleria') || firstPlace.category === 'museum') {
+        text += `Ho iniziato da ${firstPlace.name} nel momento migliore per visitarlo ottimizzando i tempi di attesa e l'afflusso.`;
+      } else {
+        text += `Ho posizionato ${firstPlace.name} come prima tappa del pomeriggio/serata per sfruttare al meglio le ore disponibili.`;
+      }
     } else {
-      text += `Ho posizionato ${firstPlace.name} come prima tappa per avviare la giornata al meglio sfruttando le ore più fresche e tranquille del mattino.`;
+      if (nameLower.includes('parlamento') || nameLower.includes('museo') || nameLower.includes('basilica') || nameLower.includes('castello') || nameLower.includes('galleria') || firstPlace.category === 'museum') {
+        text += `Ho iniziato da ${firstPlace.name} perché apre presto al mattino ed è il momento ideale per visitarlo con meno affollamento e tempi di attesa ridotti.`;
+      } else {
+        text += `Ho posizionato ${firstPlace.name} come prima tappa per avviare la giornata al meglio sfruttando le ore più fresche e tranquille del mattino.`;
+      }
     }
 
     if (secondPlace) {

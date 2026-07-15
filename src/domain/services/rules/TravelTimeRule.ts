@@ -6,7 +6,7 @@ export class TravelTimeRule implements ITimelineRule {
   public name = 'TravelTimeRule';
 
   public evaluate(candidate: PlaceRef, context: TimelineContext): RuleResult {
-    if (!context.currentPlace || candidate.isBlock) {
+    if (!context.currentPlace || candidate.isBlock || !context.currentPlace.coordinates || !candidate.coordinates) {
       return { scoreDelta: 0, reject: false };
     }
 

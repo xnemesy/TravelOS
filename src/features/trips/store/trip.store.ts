@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Trip, TripEvent } from '../../../domain/trip/models/trip.model';
+import { Trip, TripEvent, TripTravelers } from '../../../domain/trip/models/trip.model';
 import { TripRepository } from '../../../domain/trip/repositories/trip.repository';
 import { MMKVAdapter } from '../../../core/storage/mmkv.adapter';
 import { getAutoCoverForDestination } from '../utils/cover-matcher';
@@ -28,7 +28,7 @@ interface TripState {
   // Actions
   setActiveTrip: (id: string) => void;
   loadTrips: () => Promise<void>;
-  createTrip: (data: { title: string; destination: string; startDate: Date; endDate: Date; emoji?: string; currency?: string; coverImageUrl?: string }) => Promise<Trip>;
+  createTrip: (data: { title: string; destination: string; startDate: Date; endDate: Date; emoji?: string; currency?: string; coverImageUrl?: string; travelers?: TripTravelers; budgetAmount?: number }) => Promise<Trip>;
   updateTrip: (id: string, updates: Partial<Trip>) => Promise<Trip>;
   archiveTrip: (id: string) => Promise<void>;
   deleteTrip: (id: string) => Promise<void>;
@@ -90,6 +90,8 @@ export const useTripStore = create<TripState>((set, get) => ({
       endDate: data.endDate,
       status: 'planned',
       coverImageUrl,
+      travelers: data.travelers,
+      budgetAmount: data.budgetAmount,
       stats: {
         savedPlaces: 0,
         reservations: 0,

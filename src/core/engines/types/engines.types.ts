@@ -92,6 +92,11 @@ export interface ITripSetupEngine extends IHydratable {
     updates: Partial<Omit<Accommodation, 'id'>>
   ): Promise<Accommodation>;
   removeAccommodation(tripId: string, accommodationId: string): Promise<void>;
+  syncTransportsAndAccommodations(
+    tripId: string,
+    transports: Transport[],
+    accommodations: Accommodation[]
+  ): Promise<TripSetup>;
 }
 
 // ============================================================================
@@ -121,6 +126,9 @@ export interface ITimelineEngine extends IHydratable {
 
   /** Ottimizza la sequenza delle tappe in una giornata specifica */
   optimizeDayTimeline(tripId: string, dayNumber: number, style?: TravelStyle): Promise<void>;
+
+  /** Invalida la cache e ricalcola le giornate dopo una modifica a trasporti/alloggi nel TripSetup */
+  invalidateTimeline(tripId: string): Promise<void>;
 }
 
 // ============================================================================

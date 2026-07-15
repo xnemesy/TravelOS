@@ -47,8 +47,8 @@ export interface PlaceSavedPayload {
   placeId: string;
   name: string;
   category: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface PlaceVisitedPayload {

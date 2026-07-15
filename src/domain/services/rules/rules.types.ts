@@ -1,8 +1,18 @@
-import { PlaceRef } from '../../../core/engines/types/context.types';
+import { PlaceRef, MealTimeWindow, MealWindowsConfig } from '../../../core/engines/types/context.types';
 import { DailyWeatherSummary } from '../../providers/travel-providers.types';
+
+export { MealTimeWindow, MealWindowsConfig };
+
+export const DEFAULT_MEAL_WINDOWS: MealWindowsConfig = {
+  breakfast: { startMinutes: 6 * 60, endMinutes: 10 * 60 + 30 }, // 06:00 - 10:30
+  lunch: { startMinutes: 11 * 60 + 30, endMinutes: 15 * 60 },     // 11:30 - 15:00
+  dinner: { startMinutes: 18 * 60, endMinutes: 22 * 60 },          // 18:00 - 22:00
+};
 
 export interface TimelineContext {
   currentTimeMinutes: number;
+  effectiveDayEnd?: number;
+  mealWindows?: MealWindowsConfig;
   currentPlace: PlaceRef | null;
   weather: DailyWeatherSummary | null;
   energyLevel: 'low' | 'medium' | 'high';

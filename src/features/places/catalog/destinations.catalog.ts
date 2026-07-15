@@ -15,7 +15,7 @@ export interface DestinationCatalogItem {
   flag: string;        // es. "🇭🇺"
   currency: string;    // es. "EUR", "HUF", "JPY", "USD", "GBP"
   timezone: string;    // es. "Europe/Budapest"
-  coordinates: {
+  coordinates?: {
     latitude: number;
     longitude: number;
   };

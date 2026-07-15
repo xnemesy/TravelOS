@@ -126,20 +126,32 @@ export const InspirationWizardModal: React.FC<InspirationWizardModalProps> = ({
     setStep('building');
     setBuildProgress(0);
 
-    const steps = 6;
-    for (let i = 1; i <= steps; i++) {
-      await new Promise(resolve => setTimeout(resolve, 400));
-      setBuildProgress(i);
-      if (i % 2 === 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
     try {
+      const steps = 6;
+      for (let i = 1; i <= steps; i++) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        setBuildProgress(i);
+        try {
+          if (i % 2 === 0) {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        } catch (e) {
+          // Ignora errori Haptics su simulatori o piattaforme non supportate
+        }
+      }
+
       const chosenPlaces = catalogPlaces.filter(p => selectedIds.has(p.id));
       await onComplete(chosenPlaces, selectedStyle);
       setStep('success');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {
+        // Ignora errori Haptics
+      }
     } catch (err) {
       console.warn('[InspirationWizardModal] Error completing wizard:', err);
+      // Ripristina lo stato in caso di errore per evitare il freeze della UI
+      setStep('places');
     } finally {
       setSubmitting(false);
     }

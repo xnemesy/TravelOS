@@ -45,7 +45,7 @@ export const SavedPlacesLibrary: React.FC<SavedPlacesLibraryProps> = ({ tripId }
           id: place.id,
           name: place.name,
           category: place.category,
-          coordinates: place.coordinates || { latitude: 0, longitude: 0 },
+          coordinates: place.coordinates,
         });
       }
     }
@@ -201,7 +201,7 @@ export const SavedPlacesLibrary: React.FC<SavedPlacesLibraryProps> = ({ tripId }
                         id: place.id,
                         name: place.name,
                         category: place.category,
-                        coordinates: place.coordinates || { latitude: 0, longitude: 0 },
+                        coordinates: place.coordinates,
                       });
                       await actions.removePlace(tripId, place.id);
                     }}
@@ -218,7 +218,7 @@ export const SavedPlacesLibrary: React.FC<SavedPlacesLibraryProps> = ({ tripId }
                       id: place.id,
                       name: place.name,
                       category: place.category,
-                      coordinates: place.coordinates || { latitude: 0, longitude: 0 },
+                      coordinates: place.coordinates,
                     })}
                     className={`px-2.5 py-1.5 rounded-lg border ${
                       assignedDay === undefined 
@@ -241,7 +241,7 @@ export const SavedPlacesLibrary: React.FC<SavedPlacesLibraryProps> = ({ tripId }
                             id: place.id,
                             name: place.name,
                             category: place.category,
-                            coordinates: place.coordinates || { latitude: 0, longitude: 0 },
+                            coordinates: place.coordinates,
                             coverImageUrl: place.coverImageUrl,
                             address: place.address,
                             rating: place.rating,

@@ -17,7 +17,10 @@ export class DistanceCalculator {
   /**
    * Calcola la distanza in metri tra due coordinate geografiche utilizzando la formula di Haversine.
    */
-  public static calculateHaversineDistance(loc1: GeoLocation, loc2: GeoLocation): number {
+  public static calculateHaversineDistance(loc1?: GeoLocation | null, loc2?: GeoLocation | null): number {
+    if (!loc1 || !loc2 || loc1.latitude == null || loc1.longitude == null || loc2.latitude == null || loc2.longitude == null) {
+      return 0;
+    }
     const dLat = this.degreesToRadians(loc2.latitude - loc1.latitude);
     const dLon = this.degreesToRadians(loc2.longitude - loc1.longitude);
 

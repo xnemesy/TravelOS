@@ -7,7 +7,8 @@ import DraggableFlatList, { ScaleDecorator, RenderItemParams } from 'react-nativ
 import * as Haptics from 'expo-haptics';
 import { Typography } from '../../../src/shared/components/Typography';
 import { EmptyState } from '../../../src/shared/components/EmptyState';
-import { useTimeline, useTravelContext } from '../../../src/shared/hooks';
+import { useTimeline, useTravelContext, useSetupProgress } from '../../../src/shared/hooks';
+import { SetupIncompleteGate } from '../../../src/features/trips/setup-progress/components/SetupIncompleteGate';
 import { formatDistance } from '../../../src/shared/utils/distance.utils';
 import { timelineEngine, placesEngine } from '../../../src/core/engines';
 import { PlaceRef } from '../../../src/core/engines/types/context.types';
@@ -47,6 +48,7 @@ export default function ItineraryScreen() {
   const { isAdvancedMode, setAdvancedMode } = usePlannerStore();
   const { days } = useTimeline(tripId);
   const context = useTravelContext(tripId);
+  const setupProgress = useSetupProgress(tripId);
   const trip = useTripStore((s) => s.getTripById(tripId));
   const destination = trip?.destination || context.destination || 'Destinazione';
   const activeDayNumber = dayParam ? parseInt(dayParam, 10) : (days?.[0]?.dayNumber || 1);
@@ -241,7 +243,7 @@ export default function ItineraryScreen() {
             onPress={() => {
               Haptics.selectionAsync();
               if (item.id.startsWith('hotel-')) {
-                return; // L'alloggio fisso non è cliccabile né scambiabile in questo stato
+                return;
               }
               if (item.id.startsWith('block-')) {
                 setSwapSlotBlock(item);
@@ -330,6 +332,17 @@ export default function ItineraryScreen() {
       </ScaleDecorator>
     );
   };
+
+  if (!setupProgress.plannerUnlocked) {
+    return (
+      <SafeAreaView className="flex-1 bg-[#FAF9F6] justify-center items-center px-4">
+        <StatusBar barStyle="dark-content" />
+        <View className="w-full max-w-md bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+          <SetupIncompleteGate tripId={tripId} missingSections={setupProgress.missingSections} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-[#FAF9F6]">
@@ -498,9 +511,9 @@ export default function ItineraryScreen() {
         tripId={tripId}
         destinationName={destination}
         onClose={() => setShowInspirationModal(false)}
-        onComplete={(places, styleId) => {
+        onComplete={async (places, styleId) => {
           setShowInspirationModal(false);
-          handleWizardComplete(places, styleId);
+          await handleWizardComplete(places, styleId);
         }}
       />
 

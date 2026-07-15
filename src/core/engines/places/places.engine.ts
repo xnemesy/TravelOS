@@ -99,8 +99,8 @@ export class PlacesEngine implements IPlacesEngine {
             placeId: existingDuplicate.id,
             name: merged.name,
             category: merged.category,
-            latitude: merged.coordinates.latitude,
-            longitude: merged.coordinates.longitude,
+            latitude: merged.coordinates?.latitude,
+            longitude: merged.coordinates?.longitude,
           },
         });
         return;
@@ -120,8 +120,8 @@ export class PlacesEngine implements IPlacesEngine {
           placeId: place.id,
           name: place.name,
           category: place.category,
-          latitude: place.coordinates.latitude,
-          longitude: place.coordinates.longitude,
+          latitude: place.coordinates?.latitude,
+          longitude: place.coordinates?.longitude,
         },
       });
     }
