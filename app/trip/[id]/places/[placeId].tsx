@@ -94,9 +94,9 @@ export default function PlaceDetailScreen() {
     const { latitude: lat1, longitude: lon1 } = place.coordinates;
     
     return savedPlaces
-      .filter(p => p.id !== place.id && p.coordinates)
+      .filter(p => p.id !== place?.id && Boolean(p.coordinates))
       .map(p => {
-        const { latitude: lat2, longitude: lon2 } = p.coordinates;
+        const { latitude: lat2, longitude: lon2 } = p.coordinates!;
         const distance = calculateHaversineDistance(lat1, lon1, lat2, lon2);
         return { place: p, distance };
       })
@@ -153,11 +153,18 @@ export default function PlaceDetailScreen() {
     if (place.coordinates) {
       actionsList.push({ icon: 'navigate-outline', label: 'Naviga' });
     }
-    actionsList.push({ icon: 'call-outline', label: 'Chiama' });
-    if (place.category === 'restaurant') {
+    if (place.phone) {
+      actionsList.push({ icon: 'call-outline', label: 'Chiama' });
+    }
+    if (place.website) {
       actionsList.push({ icon: 'restaurant-outline', label: 'Menu' });
     }
-    actionsList.push({ icon: 'ticket-outline', label: 'Biglietti' });
+    if (place.ticketUrl) {
+      actionsList.push({ icon: 'ticket-outline', label: 'Biglietti' });
+    }
+    if (place.bookingUrl) {
+      actionsList.push({ icon: 'calendar-outline', label: 'Prenota' });
+    }
 
     // Tasto Check-in / Segna come visitato reattivo (con toggle!)
     if (!place.isVisited) {
@@ -213,7 +220,11 @@ export default function PlaceDetailScreen() {
     } else if (tripStatus === 'planned') {
       contextString = `${ratingStr} • 📅 In programma • 🕒 60 min stimati`;
     } else if (tripStatus === 'ongoing') {
-      contextString = `${ratingStr} • 🟢 Aperto adesso • 🚶 350m da te`;
+      if (place.coordinates) {
+        contextString = `${ratingStr} • 🟢 Aperto adesso • 🚶 350m da te`;
+      } else {
+        contextString = `${ratingStr} • 🟢 Aperto adesso • 📖 Luogo editoriale`;
+      }
     } else {
       contextString = `${ratingStr} • ⏳ Tappa di viaggio`;
     }

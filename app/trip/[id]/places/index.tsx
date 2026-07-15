@@ -233,7 +233,7 @@ export default function PlacesListScreen() {
       name: item.baseData.name,
       category: item.baseData.category,
       coverImageUrl: item.baseData.coverImageUrl,
-      coordinates: coords ? { latitude: coords.lat, longitude: coords.lng } : { latitude: 0, longitude: 0 },
+      coordinates: coords ? { latitude: coords.lat, longitude: coords.lng } : undefined,
       address: item.baseData.location?.address,
       rating: item.baseData.rating,
       priority: item.collections.includes('imperdibili') ? 'must_see' : 'recommended',
@@ -616,7 +616,7 @@ export default function PlacesListScreen() {
                       {/* Top Badges */}
                       <View className="flex-row justify-between items-center relative z-10">
                         <View className="flex-row flex-wrap gap-1.5">
-                          {item.collections.slice(0, 2).map(tag => {
+                          {item.collections.slice(0, 2).map((tag: string) => {
                             const colMeta = EDITORIAL_COLLECTIONS.find(c => c.id === tag);
                             return (
                               <View key={tag} className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20">
@@ -946,12 +946,7 @@ export default function PlacesListScreen() {
                     <Pressable
                       onPress={async (e) => {
                         e.stopPropagation();
-                        await actions.assignPlaceToDay(tripId, undefined, {
-                          id: place.id,
-                          name: place.name,
-                          category: place.category,
-                          coordinates: place.coordinates || { latitude: 0, longitude: 0 },
-                        });
+                        await actions.assignPlaceToDay(tripId, undefined, place);
                         await actions.removePlace(tripId, place.id);
                       }}
                       className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/40 backdrop-blur-md items-center justify-center border border-white/20 active:bg-red-500 z-50"

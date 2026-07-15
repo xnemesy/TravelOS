@@ -29,6 +29,7 @@ export interface OptimizationProfile {
   travelStyle: string;
   weights: Record<string, number>;
   preferredStartTime: string;
+  preferredEndTime?: string;
   mealStrategy: string;
   walkingTolerance: number; // in meters
 }
@@ -48,7 +49,49 @@ export type PlaceRole =
 
 export type AnchorType = 'HARD' | 'SOFT';
 
+/**
+ * JOURNEY ANCHORS — punti strutturali immutabili del viaggio (redesign
+ * JourneyComposer). Derivati da Transport/Accommodation (TripSetup, ADR-018),
+ * mai dal Planner: delimitano i confini reali di arrivo/partenza che nessuna
+ * attività può attraversare. 'activities' non genera mai un proprio blocco:
+ * rappresenta lo spazio libero tra gli anchor, riempito dal loop esistente
+ * del JourneyComposer.
+ */
+export type JourneyAnchorKind =
+  | 'arrival_flight'
+  | 'arrival_airport'
+  | 'transfer'
+  | 'check_in'
+  | 'activities'
+  | 'check_out'
+  | 'departure_transfer'
+  | 'departure_airport'
+  | 'departure_flight';
+
+export interface JourneyAnchor {
+  id: string;
+  kind: JourneyAnchorKind;
+  label: string;
+  date: string; // YYYY-MM-DD — giorno della timeline su cui ricade l'istante
+  startISO: string; // Istante reale di inizio (ISO 8601), mai ricalcolato dal Composer
+  endISO: string; // Istante reale di fine (ISO 8601), mai ricalcolato dal Composer
+  coordinates?: GeoLocation;
+  sourceType: 'transport' | 'accommodation' | 'derived';
+  sourceId?: string; // Transport.id o Accommodation.id di provenienza, se applicabile
+}
+
 export type ExperienceDensity = 'very_relaxed' | 'relaxed' | 'balanced' | 'busy' | 'intense';
+
+export interface MealTimeWindow {
+  startMinutes: number;
+  endMinutes: number;
+}
+
+export interface MealWindowsConfig {
+  breakfast: MealTimeWindow;
+  lunch: MealTimeWindow;
+  dinner: MealTimeWindow;
+}
 
 export interface JourneyConstraints {
   maxWalkingKm: number;
@@ -57,6 +100,8 @@ export interface JourneyConstraints {
   lunchRequired: boolean;
   dinnerRequired: boolean;
   freeTimeRequired: boolean;
+  preferredEndTime?: string;
+  mealWindows?: MealWindowsConfig;
 }
 
 export interface JourneyDecision {
@@ -119,7 +164,7 @@ export interface FreeTimeSlot {
   startTime: string;
   endTime: string;
   durationMinutes: number;
-  coordinates: GeoLocation;
+  coordinates?: GeoLocation;
   context?: string;
 }
 
@@ -208,7 +253,11 @@ export interface PlaceRef {
   id: string;
   name: string;
   category: string; // 'breakfast' | 'lunch' | 'dinner' | 'sunset' | 'drinks' | 'walk' | 'visit' | 'landmark' | 'museum' | 'hotel' | 'restaurant'
-  coordinates: GeoLocation;
+  coordinates?: GeoLocation;
+  phone?: string;
+  website?: string;
+  bookingUrl?: string;
+  ticketUrl?: string;
   coverImageUrl?: string;
   address?: string;
   rating?: number;
@@ -230,6 +279,7 @@ export interface PlaceRef {
   warnings?: string[]; // Avvisi o allerte generate dai provider SIP (es. Chiuso, Allerta meteo)
   role?: PlaceRole;
   anchorType?: AnchorType;
+  journeyAnchorKind?: JourneyAnchorKind; // Presente solo sui blocchi generati da JourneyAnchorEngine
   decision?: JourneyDecision;
   freeTimePurpose?: string; // Scopo contestuale per gli slot di tempo libero
 }
@@ -261,6 +311,7 @@ export interface TimelineDaySchedule {
   density?: ExperienceDensity;
   theme?: string; // Titolo generato (Identità della Giornata)
   mood?: 'relaxed' | 'balanced' | 'intense' | 'photography' | 'gastronomic' | 'culture' | 'express' | 'family';
+  anchors?: JourneyAnchor[]; // Journey Anchors del viaggio rilevanti per questa giornata (arrivo/partenza)
   overview: {
     experiencesCount: number;
     startTime: string;

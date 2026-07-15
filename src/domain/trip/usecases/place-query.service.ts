@@ -1,69 +1,70 @@
-import { IPlaceRepository } from '../repositories/place.repository';
 import { PlacesProviderAdapter } from '../../providers/travel-providers.types';
 import { ResolvedPlace, ResolvedPlaceSource } from '../../../core/engines/types/context.types';
-import { PlaceMergeEngine } from '../engine/PlaceMergeEngine';
-import { canonicalPlaceToPlaceRef } from '../../../core/engines/mappers/CanonicalPlaceToPlaceRef';
-import { TravelPlace } from '../models/place.model';
 import { EDITORIAL_PLACES_CATALOG } from '../../../features/places/catalog/editorial-places.catalog';
+import { placesEngine } from '../../../core/engines';
+import { TravelServices } from '../../providers/TravelServices';
 
 /**
  * ============================================================================
  * PLACE QUERY SERVICE (Application / Query Service)
  * ============================================================================
  * ADR-017 / Transient Place Resolver Pattern.
- * Orchestrates reading places by first checking the persisted repository
+ * Orchestrates reading places by first checking the active PlacesEngine
  * (Source of Truth) and falling back to the configured Place Provider
  * for missing/transient places.
  */
 export class PlaceQueryService {
   constructor(
-    private readonly repository: IPlaceRepository,
-    private readonly provider: PlacesProviderAdapter
+    private readonly provider: PlacesProviderAdapter = TravelServices.places()
   ) {}
 
   /**
    * Resolves a placeId into a Projected `ResolvedPlace` for the UI.
    *
    * RESOLUTION POLICY:
-   * If a persisted TravelPlace exists, it is always considered the source of truth.
+   * If a persisted place exists in PlacesEngine, it is always considered the source of truth.
    * Provider data must never overwrite or shadow persisted user data during a read-only resolution.
-   * External providers are consulted only when no canonical place exists for the requested identifier.
+   * External providers are consulted only when no place exists for the requested identifier.
    */
   public async resolvePlace(tripId: string, placeId: string): Promise<ResolvedPlace | null> {
-    // 1. Check local repository (Source of Truth)
-    const persistedPlaces = await this.repository.getPlacesByTripId(tripId);
-    let existing: TravelPlace | undefined | null = persistedPlaces.find(p => p.id === placeId || p.externalProviderId === placeId);
+    // 1. Check active PlacesEngine (Source of Truth)
+    const savedPlaces = await placesEngine.getSavedPlaces(tripId);
+    let existing = savedPlaces.find(p => p.id === placeId);
 
-    // Se non lo troviamo tra quelli del trip, cerchiamo per ID globale,
-    // ma assicurandoci che non appartenga a un altro trip (isolamento).
     if (!existing) {
-      existing = await this.repository.getPlaceById(placeId);
-      if (existing && existing.tripId !== tripId) {
-        existing = undefined; // Do not leak places across trips
+      const placeDetails = await placesEngine.getPlaceDetails(placeId);
+      if (placeDetails) {
+        existing = placeDetails;
       }
     }
 
     if (existing) {
       return {
-        place: canonicalPlaceToPlaceRef(existing),
+        place: existing,
         isTransient: false,
         source: 'saved',
       };
     }
 
-    // 1b. Catalogo editoriale (statico, ExternalPlace-shaped — ADR-017 §3.5,
-    // "il catalogo editoriale diventa un secondo produttore legittimo...
-    // tramite lo stesso PlaceMergeEngine"). Nessuna delle due fonti sopra/sotto
-    // conosce questi id (`edit-*`): né il repository persistito né il provider
-    // esterno. `mergeFromProvider` accetta `ExternalPlace` direttamente, senza
-    // passare per `PlaceMetadata`.
+    // 1b. Catalogo editoriale (statico)
     const catalogItem = EDITORIAL_PLACES_CATALOG.find(item => item.id === placeId);
     if (catalogItem) {
-      const transientEditorialPlace = PlaceMergeEngine.mergeFromProvider(catalogItem.baseData, { tripId });
+      const coords = catalogItem.baseData.location?.coordinates;
       return {
-        place: canonicalPlaceToPlaceRef(transientEditorialPlace, {
-          durationMinutes: catalogItem.recommendedDurationMinutes,
-        }),
+        place: {
+          id: catalogItem.id,
+          name: catalogItem.baseData.name,
+          category: catalogItem.baseData.category as any,
+          coordinates: coords ? {
+            latitude: coords.lat,
+            longitude: coords.lng,
+          } : undefined,
+          coverImageUrl: catalogItem.baseData.coverImageUrl,
+          address: catalogItem.baseData.location?.address,
+          rating: catalogItem.baseData.rating,
+          durationMinutes: catalogItem.recommendedDurationMinutes || 60,
+          isVisited: false,
+        },
         isTransient: true,
         source: 'editorial',
       };
@@ -75,31 +76,33 @@ export class PlaceQueryService {
       return null;
     }
 
-    // 3. Build transient TravelPlace (In-Memory)
-    const transientPlace = PlaceMergeEngine.mergeFromProvider(metadata, { tripId });
-
-    // Derive source type (simple heuristic based on ID or providerName fallback)
+    // Derive source type
     let source: ResolvedPlaceSource = 'mock';
     if (metadata.placeId.startsWith('google') || metadata.googleMapsUrl) source = 'google';
     else if (metadata.placeId.startsWith('osm')) source = 'osm';
     else if (metadata.placeId.startsWith('apple') || metadata.appleMapsUrl) source = 'apple';
-    else if (transientPlace.editorial) source = 'editorial';
 
-    // 4. Return projected ResolvedPlace
     return {
-      place: canonicalPlaceToPlaceRef(transientPlace, {
-        durationMinutes: metadata.durationMinutes,
-      }),
+      place: {
+        id: metadata.placeId,
+        name: metadata.name,
+        category: (metadata.category || 'other') as any,
+        coordinates: {
+          latitude: metadata.lat,
+          longitude: metadata.lon,
+        },
+        coverImageUrl: metadata.coverImageUrl || metadata.photoUrls?.[0],
+        address: metadata.formattedAddress,
+        rating: metadata.rating,
+        durationMinutes: metadata.durationMinutes || 60,
+        isVisited: false,
+      },
       isTransient: true,
       source,
     };
   }
 }
 
-import { repository as localPlaceRepository } from '../../../features/places/store/place.store';
-import { TravelServices } from '../../providers/TravelServices';
-
 export const placeQueryService = new PlaceQueryService(
-  localPlaceRepository,
   TravelServices.places()
 );

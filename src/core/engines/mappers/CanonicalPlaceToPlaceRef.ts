@@ -7,7 +7,7 @@ import { PlaceRef } from '../types/context.types';
  * va fornito dal chiamante (`TimelineEngine`/`JourneyComposer`) al momento
  * della proiezione, mai inventato da questo mapper.
  */
-export interface PlaceRefSchedulingContext {
+export interface PlaceRefSchedulingContext extends Partial<PlaceRef> {
   scheduledTime?: string;
   calculatedStartTime?: string;
   calculatedEndTime?: string;
@@ -25,6 +25,7 @@ export interface PlaceRefSchedulingContext {
   anchorType?: PlaceRef['anchorType'];
   decision?: PlaceRef['decision'];
   freeTimePurpose?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -37,22 +38,12 @@ export interface PlaceRefSchedulingContext {
  * `priority`) dal livello External di `place`, più i campi di
  * pianificazione forniti esplicitamente in `schedulingContext`.
  *
- * **Nota di conformità ADR-017**: `durationMinutes`, `isVisited` e `notes`
- * sono derivati qui da `TravelPlace` (`averageVisitDurationMinutes`/
- * `editorial.recommendedDurationMinutes`, `memories.checkInStatus`,
- * `notes[].content` rispettivamente) pur **non essendo elencati** tra le
- * "Proprietà consentite" di ADR-017 §3.3 — un'estensione di fatto rispetto
- * al testo dell'ADR, non ancora formalizzata in un aggiornamento di §3.3.
- * `role`/`anchorType` restano invece esclusi dal sottoinsieme canonico
- * (disponibili solo via `schedulingContext`), per lo stesso motivo.
- *
- * **Non ancora adottato da alcun chiamante reale nella pipeline principale**
- * (ADR-017, piano di migrazione passo #3): il collegamento a
- * `TimelineEngine`/`JourneyComposer` (passi #8-#10) richiede prima
- * migrare la persistenza di `PlacesEngine`/`TimelineEngine` da
- * `PlaceRef[]` a `TravelPlace[]`, fuori scope per questa fase. Adottato
- * oggi solo dal percorso di sola lettura transiente in `usePlaceDetails`
- * (`src/shared/hooks/`), mai persistito.
+ * **Nota di conformità ADR-017 & Sprint 18 Fase 2 (ADR-023/ADR-024)**:
+ * Per garantire l'integrità del ciclo `CanonicalPlace → PlaceRef → Timeline →
+ * Persistence → Hydration` senza perdita di dati (Zero Regression), il sottoinsieme
+ * proiettato preserva integralmente da `place` e da `schedulingContext`:
+ * `role`, `anchorType`, `scheduledTime`, `notes`, `isVisited`, `phone`, `website`,
+ * `bookingUrl`, e `ticketUrl`.
  */
 export function canonicalPlaceToPlaceRef(
   place: TravelPlace,
@@ -66,6 +57,11 @@ export function canonicalPlaceToPlaceRef(
     );
   }
 
+  const coords = schedulingContext.coordinates ?? {
+    latitude: coordinates.lat,
+    longitude: coordinates.lng,
+  };
+
   // Derive durationMinutes: schedulingContext > TravelPlace.averageVisitDurationMinutes > Editorial.recommendedDurationMinutes > 60
   const durationMinutes = schedulingContext.durationMinutes 
     ?? place.averageVisitDurationMinutes 
@@ -73,16 +69,32 @@ export function canonicalPlaceToPlaceRef(
     ?? 60;
 
   // Derive isVisited
-  const isVisited = place.memories?.checkInStatus === 'completed';
+  const isVisited = schedulingContext.isVisited 
+    ?? (place.status === 'visited' || place.memories?.checkInStatus === 'completed');
 
   // Format notes to a single string for PlaceRef
-  const notes = place.notes?.map(n => n.content).join('\n') || undefined;
+  const notes = schedulingContext.notes
+    ?? (place.notes?.map(n => n.content).join('\n') || place.memories?.diaryEntry || undefined);
 
-  return {
+  const role = schedulingContext.role ?? place.role ?? place.baseData.role;
+  const anchorType = schedulingContext.anchorType ?? place.anchorType ?? place.baseData.anchorType;
+  const scheduledTime = schedulingContext.scheduledTime
+    ?? (place.scheduledTime instanceof Date
+      ? place.scheduledTime.toISOString()
+      : typeof place.scheduledTime === 'string'
+        ? place.scheduledTime
+        : undefined);
+
+  const phone = schedulingContext.phone ?? place.baseData.contact?.phone;
+  const website = schedulingContext.website ?? place.baseData.contact?.website;
+  const bookingUrl = schedulingContext.bookingUrl ?? place.bookingUrl;
+  const ticketUrl = schedulingContext.ticketUrl ?? place.memories?.ticketUrl;
+
+  const ref: PlaceRef = {
     id: place.id,
     name: place.baseData.name,
     category: place.baseData.category,
-    coordinates: { latitude: coordinates.lat, longitude: coordinates.lng },
+    coordinates: coords,
     coverImageUrl: place.baseData.coverImageUrl,
     address: place.baseData.location?.address,
     rating: place.baseData.rating,
@@ -92,4 +104,14 @@ export function canonicalPlaceToPlaceRef(
     notes,
     ...schedulingContext,
   };
+
+  if (role !== undefined && ref.role === undefined) ref.role = role;
+  if (anchorType !== undefined && ref.anchorType === undefined) ref.anchorType = anchorType;
+  if (scheduledTime !== undefined && ref.scheduledTime === undefined) ref.scheduledTime = scheduledTime;
+  if (phone !== undefined && ref.phone === undefined) ref.phone = phone;
+  if (website !== undefined && ref.website === undefined) ref.website = website;
+  if (bookingUrl !== undefined && ref.bookingUrl === undefined) ref.bookingUrl = bookingUrl;
+  if (ticketUrl !== undefined && ref.ticketUrl === undefined) ref.ticketUrl = ticketUrl;
+
+  return ref;
 }

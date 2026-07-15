@@ -15,9 +15,11 @@ import {
   ExperienceDensity,
   JourneyConstraints,
   JourneyDecision,
-  JourneyReport
+  JourneyReport,
+  JourneyAnchor
 } from '../../core/engines/types/context.types';
 import { DistanceCalculator } from './DistanceCalculator';
+import { JourneyAnchorEngine } from './JourneyAnchorEngine';
 import { 
   CATEGORY_RULES, 
   SCORING_WEIGHTS, 
@@ -28,7 +30,7 @@ import {
 } from '../config/travel-rules';
 import { TravelServices } from '../providers/TravelServices';
 import { timelineRuleEngine } from './rules/TimelineRuleEngine';
-import { TimelineContext } from './rules/rules.types';
+import { TimelineContext, DEFAULT_MEAL_WINDOWS } from './rules/rules.types';
 
 export interface ComposeJourneyOptions {
   availablePlaces: PlaceRef[]; // Proviene rigorosamente dalla Libreria o tappe della giornata
@@ -37,6 +39,9 @@ export interface ComposeJourneyOptions {
   dateStr?: string;
   currentSchedule?: TimelineDaySchedule;
   customConstraints?: JourneyConstraints;
+  // Journey Anchors del viaggio (arrivo/partenza) — se assenti, la giornata
+  // non ha vincoli strutturali (comportamento invariato).
+  anchors?: JourneyAnchor[];
 }
 
 /**
@@ -65,7 +70,8 @@ export class JourneyComposerService {
       places: basePlaces,
       totalWalkDistanceMeters: 0,
       totalEstimatedDurationMinutes: 0,
-      overview: { experiencesCount: basePlaces.length, startTime: '09:00', endTime: '21:00', foodStopsCount: 0 }
+      overview: { experiencesCount: basePlaces.length, startTime: '09:00', endTime: '21:00', foodStopsCount: 0 },
+      anchors: options.anchors,
     };
 
     // Se stiamo creando o aggiungendo luoghi non assegnati alla giornata, integriamoli
@@ -75,7 +81,12 @@ export class JourneyComposerService {
       scheduleToOptimize.places = [...scheduleToOptimize.places, ...newPlaces];
     }
 
-    return this.composeDayJourneyWithSIP(scheduleToOptimize, style, options.customConstraints);
+    return this.composeDayJourneyWithSIP(
+      scheduleToOptimize,
+      style,
+      options.customConstraints,
+      options.anchors || scheduleToOptimize.anchors
+    );
   }
 
   public generateDaySchedule(
@@ -91,7 +102,13 @@ export class JourneyComposerService {
     const cleanInput = places.filter(p => p.id !== 'hotel-start' && p.id !== 'hotel-end');
     let finalPlaces = cleanInput;
 
-    if (cleanInput.length > 0) {
+    // Se la giornata è già delimitata da Journey Anchor reali (arrivo/check-in
+    // o check-out/partenza), l'assunzione "la giornata parte/torna in
+    // alloggio" non si applica più: gli anchor sono l'inizio/fine reali,
+    // il blocco sintetico "hotel-start/end" non va aggiunto.
+    const hasJourneyAnchors = cleanInput.some(p => !!p.journeyAnchorKind);
+
+    if (cleanInput.length > 0 && !hasJourneyAnchors) {
       const firstRealPlace = cleanInput[0];
       const lastRealPlace = cleanInput[cleanInput.length - 1];
 
@@ -128,7 +145,7 @@ export class JourneyComposerService {
           prevPlace.coordinates,
           place.coordinates
         );
-        
+
         // Se la distanza supera i 3km (3000m), stimiamo tempo di guida anziché camminata
         if (distanceMeters > 3000) {
           const speedKmh = distanceMeters > 30000 ? 80 : 40; // 80 km/h per autostrada/lungo tragitto, 40 km/h per urbano
@@ -136,8 +153,16 @@ export class JourneyComposerService {
         } else {
           estimatedWalkMinutes = DistanceCalculator.estimateWalkingDurationMinutes(distanceMeters);
         }
-        
+
         currentMinutesSinceMidnight += estimatedWalkMinutes;
+      }
+
+      // Journey Anchor (o qualsiasi place con orario reale prenotato): l'istante
+      // è immutabile, non un accumulo di camminate/attese. Il Composer avanza
+      // l'orologio interno fino a quell'istante reale, senza ricalcolarlo.
+      if (place.scheduledTime) {
+        const scheduled = new Date(place.scheduledTime);
+        currentMinutesSinceMidnight = scheduled.getHours() * 60 + scheduled.getMinutes();
       }
 
       if (place.category === 'lunch' && currentMinutesSinceMidnight < 12 * 60 + 30) {
@@ -346,37 +371,49 @@ export class JourneyComposerService {
   }
 
   public async composeDayJourney(
-    currentSchedule: TimelineDaySchedule, 
+    currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
-    customConstraints?: JourneyConstraints
+    customConstraints?: JourneyConstraints,
+    anchors?: JourneyAnchor[]
   ): Promise<TimelineDaySchedule> {
-    if (!currentSchedule.places || currentSchedule.places.length === 0) {
+    const dayAnchors = anchors || currentSchedule.anchors || [];
+    const activityWindow = JourneyAnchorEngine.getDayActivityWindow(dayAnchors, currentSchedule.date);
+    const anchorBlocks = JourneyAnchorEngine.toPlaceRefs(dayAnchors, currentSchedule.date);
+    const startAnchorBlocks = anchorBlocks.filter(
+      (a) => a.journeyAnchorKind && JourneyAnchorEngine.isArrivalAnchorKind(a.journeyAnchorKind)
+    );
+    const endAnchorBlocks = anchorBlocks.filter(
+      (a) => a.journeyAnchorKind && JourneyAnchorEngine.isDepartureAnchorKind(a.journeyAnchorKind)
+    );
+
+    if ((!currentSchedule.places || currentSchedule.places.length === 0) && anchorBlocks.length === 0) {
       return currentSchedule;
     }
 
     const profile = OPTIMIZATION_PROFILES[profileId] || OPTIMIZATION_PROFILES['culture'];
     const constraints = customConstraints || JOURNEY_CONSTRAINTS[profileId] || JOURNEY_CONSTRAINTS['culture'];
 
-    const nonBlockPlaces = currentSchedule.places.filter(p => !p.isBlock).map(p => ({
+    const nonBlockPlaces = (currentSchedule.places || []).filter(p => !p.isBlock).map(p => ({
       ...p,
       role: inferPlaceRole(p),
       anchorType: p.anchorType || (p.scheduledTime ? 'HARD' as AnchorType : (p.isLocked ? 'SOFT' as AnchorType : undefined))
     }));
 
-    if (nonBlockPlaces.length === 0) return currentSchedule;
+    if (nonBlockPlaces.length === 0 && anchorBlocks.length === 0) return currentSchedule;
 
     const beforeDistance = currentSchedule.totalWalkDistanceMeters;
-    
+
     const hardAnchors = nonBlockPlaces.filter(p => p.anchorType === 'HARD' || p.scheduledTime);
     const softAnchors = nonBlockPlaces.filter(p => p.anchorType === 'SOFT' && !p.scheduledTime && p.isLocked);
     const flexiblePlaces = nonBlockPlaces.filter(p => !p.scheduledTime && !p.isLocked);
 
-    const heroPlaces = flexiblePlaces.filter(p => p.role === 'hero_experience');
-    const secondaryPlaces = flexiblePlaces.filter(p => p.role !== 'hero_experience');
-    
+    const isMustSee = (p: PlaceRef) => p.role === 'hero_experience' || p.priority === 'must_see' || (p as any).mustSee === true || (p as any).priority === 'high';
+    const heroPlaces = flexiblePlaces.filter(isMustSee);
+    const secondaryPlaces = flexiblePlaces.filter(p => !isMustSee(p));
+
     let selectedHeroes: PlaceRef[] = [];
     let demotedHeroes: PlaceRef[] = [];
-    
+
     const maxHeroes = profileId === 'express' || profileId === 'culture' ? 2 : 1;
     if (heroPlaces.length > maxHeroes) {
       selectedHeroes = heroPlaces.slice(0, maxHeroes);
@@ -387,8 +424,48 @@ export class JourneyComposerService {
 
     const availableSecondary = [...secondaryPlaces, ...demotedHeroes];
 
+    // Il tetto oltre cui nessuna attività può proseguire: il primo istante di
+    // partenza (check-out/transfer/aeroporto/volo) della giornata, se presente.
+    const ceilingMinutes = activityWindow?.endMinutes ?? (24 * 60 - 1);
+    const prefEndMinutes = this.parseTime(constraints.preferredEndTime || profile.preferredEndTime || '22:00');
+    const effectiveDayEnd = Math.min(ceilingMinutes, prefEndMinutes);
+
     const composedPlaces: PlaceRef[] = [];
     let currentMinutesSinceMidnight = this.parseTime(profile.preferredStartTime);
+
+    if (currentSchedule.overview?.startTime) {
+      const parsedStart = this.parseTime(currentSchedule.overview.startTime);
+      if (!isNaN(parsedStart) && parsedStart > 0 && parsedStart < 24 * 60) {
+        currentMinutesSinceMidnight = Math.max(currentMinutesSinceMidnight, parsedStart);
+      }
+    }
+
+    // Nessuna attività può iniziare prima che il viaggiatore sia fisicamente
+    // arrivato/trasferito/check-in effettuato: gli anchor di arrivo aprono la
+    // giornata e spingono in avanti l'orologio interno del Composer.
+    if (startAnchorBlocks.length > 0) {
+      composedPlaces.push(...startAnchorBlocks);
+      const lastStartAnchor = startAnchorBlocks[startAnchorBlocks.length - 1];
+      if (lastStartAnchor.calculatedEndTime) {
+        const parsedEnd = this.parseTime(lastStartAnchor.calculatedEndTime);
+        if (!isNaN(parsedEnd) && parsedEnd > 0) {
+          currentMinutesSinceMidnight = Math.max(currentMinutesSinceMidnight, parsedEnd);
+        }
+      } else if (lastStartAnchor.scheduledTime) {
+        const lastStartAnchorTime = new Date(lastStartAnchor.scheduledTime);
+        const anchorMins = !isNaN(lastStartAnchorTime.getTime())
+          ? lastStartAnchorTime.getUTCHours() * 60 + lastStartAnchorTime.getUTCMinutes() + (lastStartAnchor.durationMinutes || 0)
+          : this.parseTime(lastStartAnchor.scheduledTime) + (lastStartAnchor.durationMinutes || 0);
+        if (!isNaN(anchorMins)) {
+          currentMinutesSinceMidnight = Math.max(currentMinutesSinceMidnight, anchorMins);
+        }
+      }
+    }
+    if (activityWindow) {
+      currentMinutesSinceMidnight = Math.max(currentMinutesSinceMidnight, activityWindow.startMinutes);
+    }
+
+    const mealWindows = constraints.mealWindows || DEFAULT_MEAL_WINDOWS;
     let hasBreakfast = false;
     let hasLunch = false;
     let hasDinner = false;
@@ -397,13 +474,21 @@ export class JourneyComposerService {
     const decisions: JourneyDecision[] = [];
     let accumulatedExplanations: string[] = [];
 
-    if (currentMinutesSinceMidnight <= 11 * 60 && profile.mealStrategy !== 'none') {
+    const canDoSightseeing = effectiveDayEnd - currentMinutesSinceMidnight >= 45;
+
+    if (
+      canDoSightseeing &&
+      currentMinutesSinceMidnight >= mealWindows.breakfast.startMinutes &&
+      currentMinutesSinceMidnight <= mealWindows.breakfast.endMinutes &&
+      profile.mealStrategy !== 'none' &&
+      currentMinutesSinceMidnight + 30 <= effectiveDayEnd
+    ) {
       const breakfastId = `block-breakfast-${Date.now()}`;
       composedPlaces.push({
         id: breakfastId,
         name: '🍳 Colazione e Caffè',
         category: 'breakfast',
-        coordinates: nonBlockPlaces[0]?.coordinates || { latitude: 0, longitude: 0 },
+        coordinates: nonBlockPlaces[0]?.coordinates,
         isBlock: true,
         durationMinutes: 30,
         role: 'coffee',
@@ -413,15 +498,17 @@ export class JourneyComposerService {
     }
 
     const pool = [...softAnchors, ...selectedHeroes, ...availableSecondary];
-    let current = composedPlaces[0] || null;
+    let current = composedPlaces[composedPlaces.length - 1] || null;
 
-    while (pool.length > 0) {
+    while (canDoSightseeing && pool.length > 0) {
       let bestIdx = -1;
       let bestScore = -Infinity;
       let bestEvaluation: any = null;
 
       const context: TimelineContext = {
         currentTimeMinutes: currentMinutesSinceMidnight,
+        effectiveDayEnd,
+        mealWindows,
         currentPlace: current,
         weather: null,
         energyLevel: 'medium',
@@ -441,6 +528,22 @@ export class JourneyComposerService {
         const evaluation = await timelineRuleEngine.evaluate(candidate, context);
 
         if (evaluation.reject) {
+          continue;
+        }
+
+        // Regola non negoziabile degli Journey Anchor e di effectiveDayEnd (BUG 7):
+        // nessuna attività può finire dopo il tetto imposto o lo spazio utile rimasto.
+        const projectedDuration = evaluation.overrideVisitDuration || candidate.durationMinutes || 60;
+        let travelMinutesToCandidate = 0;
+        if (current && current.coordinates && candidate.coordinates) {
+          const dist = DistanceCalculator.calculateHaversineDistance(current.coordinates, candidate.coordinates);
+          travelMinutesToCandidate = dist > 3000
+            ? DistanceCalculator.estimateDrivingDurationMinutes(dist, dist > 30000 ? 80 : 40)
+            : DistanceCalculator.estimateWalkingDurationMinutes(dist);
+        }
+
+        const projectedFinish = currentMinutesSinceMidnight + (evaluation.delayMinutes || 0) + travelMinutesToCandidate + projectedDuration;
+        if (projectedFinish > ceilingMinutes || projectedFinish > effectiveDayEnd) {
           continue;
         }
 
@@ -515,32 +618,37 @@ export class JourneyComposerService {
       current = nextPlace;
     }
 
-    if (!hasLunch && profile.mealStrategy !== 'none') {
+    // Un giorno di partenza troppo stretto o fuori finestra non forza un pasto che sforerebbe
+    // il tetto o la finestra oraria: meglio nessun pranzo/cena che un ritardo al gate o un pasto notturno.
+    if (canDoSightseeing && !hasLunch && profile.mealStrategy !== 'none' && currentMinutesSinceMidnight >= mealWindows.lunch.startMinutes && currentMinutesSinceMidnight <= mealWindows.lunch.endMinutes && currentMinutesSinceMidnight + 60 <= effectiveDayEnd) {
       composedPlaces.push({
         id: `block-lunch-${Date.now()}`,
         name: 'Pranzo',
         category: 'lunch',
-        coordinates: current ? current.coordinates : { latitude: 0, longitude: 0 },
+        coordinates: current?.coordinates,
         isBlock: true,
         durationMinutes: 60,
         role: 'food',
       });
       hasLunch = true;
+      currentMinutesSinceMidnight += 60;
     }
-    if (!hasDinner && profile.mealStrategy !== 'none') {
+    if (canDoSightseeing && !hasDinner && profile.mealStrategy !== 'none' && currentMinutesSinceMidnight >= mealWindows.dinner.startMinutes && currentMinutesSinceMidnight <= mealWindows.dinner.endMinutes && currentMinutesSinceMidnight + 90 <= effectiveDayEnd) {
       composedPlaces.push({
         id: `block-dinner-${Date.now()}`,
         name: 'Cena',
         category: 'dinner',
-        coordinates: current ? current.coordinates : { latitude: 0, longitude: 0 },
+        coordinates: current?.coordinates,
         isBlock: true,
         durationMinutes: 90,
         role: 'food',
       });
       hasDinner = true;
+      currentMinutesSinceMidnight += 90;
     }
 
     composedPlaces.push(...hardAnchors);
+    composedPlaces.push(...endAnchorBlocks);
 
     const generated = this.generateDaySchedule(
       currentSchedule.dayNumber,
@@ -557,15 +665,40 @@ export class JourneyComposerService {
     const heroPlace = generated.places.find(p => p.role === 'hero_experience');
     const viewpointPlace = generated.places.find(p => p.role === 'viewpoint' || p.category === 'sunset');
     
+    const realVisitsCount = generated.places.filter(p => 
+      !p.isBlock && 
+      !p.journeyAnchorKind && 
+      p.category !== 'hotel' && 
+      p.category !== 'transfer' && 
+      p.category !== 'breakfast' && 
+      p.category !== 'lunch' && 
+      p.category !== 'dinner' && 
+      p.category !== 'drinks' && 
+      p.category !== 'free_time'
+    ).length;
+
     let stars = 5;
     let statusLabel = 'La giornata è perfettamente equilibrata.';
-    if (walkingKm > constraints.maxWalkingKm) {
+    if (realVisitsCount === 0) {
+      if (startAnchorBlocks.length > 0 && (!canDoSightseeing || currentMinutesSinceMidnight >= 18 * 60 || startAnchorBlocks.some(a => a.scheduledTime?.includes('T2') || a.scheduledTime?.includes('T19') || a.scheduledTime?.includes('T18')))) {
+        statusLabel = "Nessuna attività di visita aggiunta: tempo a disposizione limitato dopo l'arrivo (o transito serale). Le tappe sono state riprogrammate alle giornate successive.";
+      } else if (endAnchorBlocks.length > 0 && !canDoSightseeing) {
+        const depTime = new Date(endAnchorBlocks[0].scheduledTime!);
+        const depTimeStr = !isNaN(depTime.getTime()) ? `${depTime.getHours().toString().padStart(2, '0')}:${depTime.getMinutes().toString().padStart(2, '0')}` : '11:00';
+        statusLabel = `Volo di partenza alle ${depTimeStr}: finestra mattutina ridotta. Previste solo attività leggere o relax prima del transfer.`;
+      } else {
+        statusLabel = "Giornata dedicata agli spostamenti e alla logistica di transito.";
+      }
+    } else if (walkingKm > constraints.maxWalkingKm) {
       stars -= 1;
       statusLabel = `Camminata intensa (${walkingKm} km), ma ben distribuita.`;
-    }
-    if (demotedHeroes.length > 0) {
+    } else if (demotedHeroes.length > 0) {
       statusLabel = 'Esperienze Must-See distribuite per non affaticare il ritmo.';
     }
+
+    const bestMomentStr = viewpointPlace 
+      ? `Golden Hour presso ${viewpointPlace.name}` 
+      : (heroPlace ? `Visita a ${heroPlace.name}` : (realVisitsCount === 0 ? "Arrivo e riposo in vista delle prossime tappe" : "Passeggiata mattutina"));
 
     const journeyReport: JourneyReport = {
       statusLabel,
@@ -573,7 +706,7 @@ export class JourneyComposerService {
       walkingKm,
       freeTimeMinutes: freeTimeMins,
       heroPlaceName: heroPlace ? heroPlace.name : undefined,
-      bestMoment: viewpointPlace ? `Golden Hour presso ${viewpointPlace.name}` : (heroPlace ? `Visita a ${heroPlace.name}` : 'Passeggiata mattutina'),
+      bestMoment: bestMomentStr,
       criticalPoint: walkingKm > 10 ? 'Distanza a piedi elevata tra le attrazioni pomeridiane.' : undefined,
       density: generated.density || 'balanced',
       decisions,
@@ -591,6 +724,10 @@ export class JourneyComposerService {
     generated.suggestions = suggestions;
     generated.conflicts = [];
     generated.journeyReport = journeyReport;
+    if (generated.overview) {
+      (generated.overview as any).journeyReport = journeyReport;
+    }
+    generated.anchors = dayAnchors.length > 0 ? dayAnchors : currentSchedule.anchors;
     generated.optimizationReport = {
       beforeDistance,
       afterDistance,
@@ -609,12 +746,14 @@ export class JourneyComposerService {
   public async composeDayJourneyWithSIP(
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
-    customConstraints?: JourneyConstraints
+    customConstraints?: JourneyConstraints,
+    anchors?: JourneyAnchor[]
   ): Promise<TimelineDaySchedule> {
-    const composed = await this.composeDayJourney(currentSchedule, profileId, customConstraints);
+    const composed = await this.composeDayJourney(currentSchedule, profileId, customConstraints, anchors);
     if (!composed.places || composed.places.length === 0) return composed;
 
-    const refPlace = composed.places[0];
+    const refPlace = composed.places.find(p => p.coordinates);
+    if (!refPlace || !refPlace.coordinates) return composed;
     const lat = refPlace.coordinates.latitude;
     const lon = refPlace.coordinates.longitude;
 
@@ -864,18 +1003,20 @@ export class JourneyComposer {
     return journeyComposer.reorderDaySchedule(currentSchedule, orderedPlaceIds);
   }
   public static async composeDayJourney(
-    currentSchedule: TimelineDaySchedule, 
+    currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
-    customConstraints?: JourneyConstraints
+    customConstraints?: JourneyConstraints,
+    anchors?: JourneyAnchor[]
   ): Promise<TimelineDaySchedule> {
-    return await journeyComposer.composeDayJourney(currentSchedule, profileId, customConstraints);
+    return await journeyComposer.composeDayJourney(currentSchedule, profileId, customConstraints, anchors);
   }
   public static async composeDayJourneyWithSIP(
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
-    customConstraints?: JourneyConstraints
+    customConstraints?: JourneyConstraints,
+    anchors?: JourneyAnchor[]
   ): Promise<TimelineDaySchedule> {
-    return journeyComposer.composeDayJourneyWithSIP(currentSchedule, profileId, customConstraints);
+    return journeyComposer.composeDayJourneyWithSIP(currentSchedule, profileId, customConstraints, anchors);
   }
   public static calculateRuntimeStatus(schedule: TimelineDaySchedule, currentTimeMinutes?: number): JourneyStatus {
     return journeyComposer.calculateRuntimeStatus(schedule, currentTimeMinutes);

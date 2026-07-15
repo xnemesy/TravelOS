@@ -3,25 +3,35 @@ import { TravelPlaceSchema, TravelPlace } from '../../../domain/trip/models/plac
 
 function buildTravelPlace(overrides: Partial<TravelPlace> = {}): TravelPlace {
   const now = new Date();
+  const defaultBaseData = {
+    providerId: 'provider-place-1',
+    name: 'Colosseo',
+    category: 'landmark' as const,
+    coverImageUrl: 'https://example.com/colosseo.jpg',
+    rating: 4.7,
+    location: {
+      address: 'Piazza del Colosseo, 1, Roma',
+      coordinates: { lat: 41.8902, lng: 12.4922 },
+    },
+  };
+
+  const baseData = overrides.baseData
+    ? {
+        ...defaultBaseData,
+        ...overrides.baseData,
+        location: 'location' in overrides.baseData ? overrides.baseData.location : defaultBaseData.location,
+      }
+    : defaultBaseData;
+
   return TravelPlaceSchema.parse({
     id: 'place-1',
     tripId: 'trip-1',
     externalProviderId: 'provider-place-1',
-    baseData: {
-      providerId: 'provider-place-1',
-      name: 'Colosseo',
-      category: 'landmark',
-      coverImageUrl: 'https://example.com/colosseo.jpg',
-      rating: 4.7,
-      location: {
-        address: 'Piazza del Colosseo, 1, Roma',
-        coordinates: { lat: 41.8902, lng: 12.4922 },
-      },
-    },
     priority: 'must_see',
     createdAt: now,
     updatedAt: now,
     ...overrides,
+    baseData,
   });
 }
 
@@ -50,12 +60,12 @@ describe('canonicalPlaceToPlaceRef', () => {
       averageVisitDurationMinutes: 45,
       memories: { checkInStatus: 'completed', isFavorite: false },
       notes: [
-        { id: 'n1', source: 'personal', content: 'Prima nota', createdAt: new Date() },
-        { id: 'n2', source: 'personal', content: 'Seconda nota', createdAt: new Date() },
+        { id: '1', source: 'personal', content: 'Prima nota', createdAt: new Date() },
+        { id: '2', source: 'personal', content: 'Seconda nota', createdAt: new Date() },
       ],
     });
-    const ref = canonicalPlaceToPlaceRef(place);
 
+    const ref = canonicalPlaceToPlaceRef(place);
     expect(ref.durationMinutes).toBe(45);
     expect(ref.isVisited).toBe(true);
     expect(ref.notes).toBe('Prima nota\nSeconda nota');
@@ -67,7 +77,8 @@ describe('canonicalPlaceToPlaceRef', () => {
         providerId: 'provider-place-1',
         name: 'Colosseo',
         category: 'landmark',
-      } as TravelPlace['baseData'],
+        location: undefined,
+      } as unknown as TravelPlace['baseData'],
     });
 
     expect(() => canonicalPlaceToPlaceRef(place)).toThrow(/non ha coordinate/);
@@ -99,5 +110,32 @@ describe('canonicalPlaceToPlaceRef', () => {
 
     expect(ref.scheduledTime).toBeUndefined();
     expect(ref.isLocked).toBeUndefined();
+  });
+
+  it('preserves role, anchorType, scheduledTime, and contact info from TravelPlace when present', () => {
+    const scheduledDate = new Date('2026-08-01T14:30:00.000Z');
+    const place = buildTravelPlace({
+      role: 'hero_experience',
+      anchorType: 'HARD',
+      scheduledTime: scheduledDate,
+      baseData: {
+        providerId: 'provider-place-1',
+        name: 'Colosseo',
+        category: 'landmark',
+        contact: {
+          phone: '+39 06 3996 7700',
+          website: 'https://colosseo.it',
+        },
+      },
+      bookingUrl: 'https://tickets.colosseo.it',
+    });
+
+    const ref = canonicalPlaceToPlaceRef(place);
+    expect(ref.role).toBe('hero_experience');
+    expect(ref.anchorType).toBe('HARD');
+    expect(ref.scheduledTime).toBe('2026-08-01T14:30:00.000Z');
+    expect(ref.phone).toBe('+39 06 3996 7700');
+    expect(ref.website).toBe('https://colosseo.it');
+    expect(ref.bookingUrl).toBe('https://tickets.colosseo.it');
   });
 });
