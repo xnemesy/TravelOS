@@ -1,5 +1,6 @@
 import { GeoLocation, JourneyAnchor, JourneyAnchorKind, PlaceRef } from '../../core/engines/types/context.types';
 import { Transport, Accommodation } from '../trip/models/trip-setup.model';
+import { LuggagePlanningService } from './LuggagePlanningService';
 
 /**
  * ============================================================================
@@ -211,7 +212,44 @@ export class JourneyAnchorEngine {
       });
     }
 
-    return anchors;
+    // Anchor logistici dei bagagli (ADR-023, Sprint 18 — Fase 5). Prodotti da
+    // un servizio puro separato che non conosce questo engine; qui vengono
+    // uniti agli anchor strutturali in un'unica timeline cronologica. Il
+    // servizio garantisce già assenza di sovrapposizioni e id duplicati tra i
+    // suoi anchor: non ne duplichiamo la logica.
+    const luggageAnchors = LuggagePlanningService.buildLuggageAnchors(transports || [], accommodations || []);
+
+    return this.mergeChronologically(anchors, luggageAnchors);
+  }
+
+  /**
+   * Unisce gli anchor strutturali (base) con quelli logistici dei bagagli in
+   * un'unica sequenza ordinata cronologicamente per `startISO`.
+   *
+   * Ordinamento deterministico, senza affidarsi alla stabilità di Array.sort:
+   * a parità di `startISO` gli anchor base precedono sempre quelli bagagli
+   * (chiave secondaria esplicita `origin`), e all'interno dello stesso gruppo
+   * si conserva l'ordine di inserimento (chiave terziaria `seq`). Questo
+   * mantiene byte-identico l'output per i trip senza anchor bagagli, perché
+   * gli anchor base sono già inseriti in ordine cronologico crescente.
+   */
+  private static mergeChronologically(
+    baseAnchors: JourneyAnchor[],
+    luggageAnchors: JourneyAnchor[]
+  ): JourneyAnchor[] {
+    const tagged = [
+      ...baseAnchors.map((anchor, seq) => ({ anchor, origin: 0, seq })),
+      ...luggageAnchors.map((anchor, seq) => ({ anchor, origin: 1, seq })),
+    ];
+
+    tagged.sort((a, b) => {
+      const delta = new Date(a.anchor.startISO).getTime() - new Date(b.anchor.startISO).getTime();
+      if (delta !== 0) return delta;
+      if (a.origin !== b.origin) return a.origin - b.origin;
+      return a.seq - b.seq;
+    });
+
+    return tagged.map((t) => t.anchor);
   }
 
   public static getAnchorsForDate(anchors: JourneyAnchor[], dateStr: string): JourneyAnchor[] {
