@@ -41,6 +41,9 @@ export const TransportSchema = z
     // Se assente, l'ordine tra tratte multiple si deduce da departureDate
     // (ADR-018 §3.1, aggiunto in review indipendente).
     sequenceOrder: z.number().optional(),
+    // Campo libero facoltativo (Transport Setup module) — non normato da ADR-018 §3.1,
+    // aggiunto additivamente per note operative (es. "check-in online già fatto").
+    notes: z.string().optional(),
   })
   .refine((data) => !data.arrivalDate || data.arrivalDate >= data.departureDate, {
     message: 'arrivalDate non può precedere departureDate',
@@ -50,18 +53,35 @@ export const TransportSchema = z
 export type Transport = z.infer<typeof TransportSchema>;
 
 // 2. Accommodation — dove il viaggiatore alloggia
+// `type` aggiunto dal modulo Accommodation Setup (non presente nella versione
+// originale ADR-018 §3.2) — stessa funzione categorizzante di `Transport.mode`,
+// mancava un campo analogo qui. Estensione additiva, nessun invariante riscritto.
+export const AccommodationTypeSchema = z.enum(['hotel', 'airbnb', 'apartment', 'hostel', 'other']);
+export type AccommodationType = z.infer<typeof AccommodationTypeSchema>;
+
+export const HotelPolicySchema = z.object({
+  allowsLuggageDropoff: z.boolean().optional(),
+  allowsEarlyCheckIn: z.boolean().optional(),
+  allowsLateCheckout: z.boolean().optional(),
+});
+export type HotelPolicy = z.infer<typeof HotelPolicySchema>;
+
 export const AccommodationSchema = z
   .object({
     id: z.string(),
+    type: AccommodationTypeSchema,
     name: z.string().min(1, 'Il nome è obbligatorio'),
     address: z.string().optional(),
     checkIn: z.date(),
     checkOut: z.date(),
     bookingReference: z.string().optional(),
+    confirmationUrl: z.string().url().optional(),
+    notes: z.string().optional(),
     confirmed: z.boolean().default(false),
     cost: z.number().nonnegative().optional(),
     currency: z.string().length(3).optional(),
     coordinates: z.object({ lat: z.number(), lng: z.number() }).optional(),
+    hotelPolicy: HotelPolicySchema.optional(),
   })
   .refine((data) => data.checkOut > data.checkIn, {
     message: 'checkOut deve essere successivo a checkIn',

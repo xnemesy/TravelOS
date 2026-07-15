@@ -6,6 +6,7 @@ import {
   TripDocumentSchema,
   TripPreferencesSchema,
   TripSetupSchema,
+  HotelPolicySchema,
 } from './trip-setup.model';
 
 describe('TransportSchema', () => {
@@ -53,11 +54,22 @@ describe('TransportSchema', () => {
     const parsed = TransportSchema.parse(base);
     expect(parsed.sequenceOrder).toBeUndefined();
   });
+
+  it('accetta notes opzionali (Transport Setup module)', () => {
+    const result = TransportSchema.safeParse({ ...base, notes: 'Check-in online già effettuato' });
+    expect(result.success).toBe(true);
+  });
+
+  it('resta valido senza notes', () => {
+    const parsed = TransportSchema.parse(base);
+    expect(parsed.notes).toBeUndefined();
+  });
 });
 
 describe('AccommodationSchema', () => {
   const base = {
     id: 'a1',
+    type: 'hotel' as const,
     name: 'Hotel Danubio',
     checkIn: new Date('2026-08-01T14:00:00.000Z'),
     checkOut: new Date('2026-08-05T10:00:00.000Z'),
@@ -76,6 +88,102 @@ describe('AccommodationSchema', () => {
     const result = AccommodationSchema.safeParse({
       ...base,
       checkOut: new Date('2026-07-30T00:00:00.000Z'),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rifiuta un type non nell\'enum', () => {
+    const result = AccommodationSchema.safeParse({ ...base, type: 'yacht' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rifiuta type assente (campo obbligatorio)', () => {
+    const { type, ...withoutType } = base;
+    const result = AccommodationSchema.safeParse(withoutType);
+    expect(result.success).toBe(false);
+  });
+
+  it('accetta confirmationUrl opzionale se è un URL valido', () => {
+    const result = AccommodationSchema.safeParse({ ...base, confirmationUrl: 'https://example.com/booking/123' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rifiuta confirmationUrl non valida', () => {
+    const result = AccommodationSchema.safeParse({ ...base, confirmationUrl: 'non-un-url' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accetta notes opzionali', () => {
+    const result = AccommodationSchema.safeParse({ ...base, notes: 'Chiedere piano alto' });
+    expect(result.success).toBe(true);
+  });
+
+  it('resta valido senza confirmationUrl/notes', () => {
+    const parsed = AccommodationSchema.parse(base);
+    expect(parsed.confirmationUrl).toBeUndefined();
+    expect(parsed.notes).toBeUndefined();
+  });
+
+  it('accetta hotelPolicy opzionale se valida e la serializza/deserializza correttamente', () => {
+    const accWithPolicy = {
+      ...base,
+      hotelPolicy: {
+        allowsLuggageDropoff: true,
+        allowsEarlyCheckIn: true,
+        allowsLateCheckout: false,
+      },
+    };
+    const parsed = AccommodationSchema.parse(accWithPolicy);
+    expect(parsed.hotelPolicy).toEqual({
+      allowsLuggageDropoff: true,
+      allowsEarlyCheckIn: true,
+      allowsLateCheckout: false,
+    });
+
+    // Verifica serializzazione e deserializzazione roundtrip
+    const serialized = JSON.stringify(parsed);
+    const deserializedJson = JSON.parse(serialized);
+    // Ripristino delle date prima del parse
+    deserializedJson.checkIn = new Date(deserializedJson.checkIn);
+    deserializedJson.checkOut = new Date(deserializedJson.checkOut);
+    const deserialized = AccommodationSchema.parse(deserializedJson);
+    expect(deserialized.hotelPolicy?.allowsLuggageDropoff).toBe(true);
+    expect(deserialized.hotelPolicy?.allowsEarlyCheckIn).toBe(true);
+    expect(deserialized.hotelPolicy?.allowsLateCheckout).toBe(false);
+  });
+
+  it('resta 100% retrocompatibile senza hotelPolicy (Accommodation salvato senza hotelPolicy continua a funzionare)', () => {
+    const parsed = AccommodationSchema.parse(base);
+    expect(parsed.hotelPolicy).toBeUndefined();
+
+    // Deserializzazione vecchio formato
+    const serializedOld = JSON.stringify(base);
+    const deserializedOldJson = JSON.parse(serializedOld);
+    deserializedOldJson.checkIn = new Date(deserializedOldJson.checkIn);
+    deserializedOldJson.checkOut = new Date(deserializedOldJson.checkOut);
+    const deserializedOld = AccommodationSchema.parse(deserializedOldJson);
+    expect(deserializedOld.hotelPolicy).toBeUndefined();
+  });
+});
+
+describe('HotelPolicySchema', () => {
+  it('accetta una policy vuota (tutti i campi opzionali per non forzare la conoscenza in fase di setup)', () => {
+    const result = HotelPolicySchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it('accetta valori boolean opzionali (allowsLuggageDropoff, allowsEarlyCheckIn, allowsLateCheckout)', () => {
+    const result = HotelPolicySchema.safeParse({
+      allowsLuggageDropoff: true,
+      allowsEarlyCheckIn: false,
+      allowsLateCheckout: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rifiuta un tipo non boolean se presente', () => {
+    const result = HotelPolicySchema.safeParse({
+      allowsEarlyCheckIn: 'si',
     });
     expect(result.success).toBe(false);
   });
