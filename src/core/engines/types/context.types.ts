@@ -49,6 +49,8 @@ export type PlaceRole =
 
 export type AnchorType = 'HARD' | 'SOFT';
 
+export type LuggageState = 'WITH_LUGGAGE' | 'STORED' | 'NONE';
+
 /**
  * JOURNEY ANCHORS — punti strutturali immutabili del viaggio (redesign
  * JourneyComposer). Derivati da Transport/Accommodation (TripSetup, ADR-018),
@@ -66,7 +68,10 @@ export type JourneyAnchorKind =
   | 'check_out'
   | 'departure_transfer'
   | 'departure_airport'
-  | 'departure_flight';
+  | 'departure_flight'
+  | 'luggage_dropoff'
+  | 'luggage_pickup'
+  | 'accommodation_return';
 
 export interface JourneyAnchor {
   id: string;
