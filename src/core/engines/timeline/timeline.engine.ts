@@ -136,7 +136,7 @@ export class TimelineEngine implements ITimelineEngine {
     if (this.tripSetupEngine) {
       const persisted = await this.repository.getTimeline(cleanTripId);
       if (persisted && persisted.length > 0) {
-        const freshAnchors = await this.getTripAnchors(cleanTripId);
+        const { anchors: freshAnchors, accommodations, transports } = await this.getTripSetupData(cleanTripId);
         let deferredQueue: PlaceRef[] = [];
         const updatedDays: TimelineDaySchedule[] = [];
 
@@ -156,6 +156,8 @@ export class TimelineEngine implements ITimelineEngine {
             dateStr: day.date,
             currentSchedule: { ...day, anchors: dayAnchors },
             anchors: dayAnchors,
+            accommodations,
+            transports,
           });
 
           updatedDays.push(newSchedule);
@@ -447,7 +449,7 @@ export class TimelineEngine implements ITimelineEngine {
     
     if (unassignedPlaces.length === 0 || timeline.length === 0) return;
 
-    const anchors = await this.getTripAnchors(cleanTripId);
+    const { anchors, accommodations, transports } = await this.getTripSetupData(cleanTripId);
     const placesPerDay = Math.ceil(unassignedPlaces.length / timeline.length);
     let currentPlaceIndex = 0;
     let deferredQueue: PlaceRef[] = [];
@@ -475,6 +477,8 @@ export class TimelineEngine implements ITimelineEngine {
         dateStr: currentSchedule.date,
         currentSchedule,
         anchors,
+        accommodations,
+        transports,
       });
 
       newTimeline[i] = newSchedule;
@@ -507,13 +511,25 @@ export class TimelineEngine implements ITimelineEngine {
    * né trasporti né alloggi: giornata senza vincoli, comportamento invariato.
    */
   private async getTripAnchors(tripId: string): Promise<JourneyAnchor[]> {
-    if (!this.tripSetupEngine) return [];
+    const data = await this.getTripSetupData(tripId);
+    return data.anchors;
+  }
+
+  private async getTripSetupData(tripId: string): Promise<{
+    anchors: JourneyAnchor[];
+    accommodations: any[];
+    transports: any[];
+  }> {
+    if (!this.tripSetupEngine) return { anchors: [], accommodations: [], transports: [] };
     const [transports, accommodations] = await Promise.all([
       this.tripSetupEngine.getTransports(tripId),
       this.tripSetupEngine.getAccommodations(tripId),
     ]);
-    if (transports.length === 0 && accommodations.length === 0) return [];
-    return JourneyAnchorEngine.buildTripAnchors(transports, accommodations);
+    if (transports.length === 0 && accommodations.length === 0) {
+      return { anchors: [], accommodations, transports };
+    }
+    const anchors = JourneyAnchorEngine.buildTripAnchors(transports, accommodations);
+    return { anchors, accommodations, transports };
   }
 
   public async optimizeDayTimeline(tripId: string, dayNumber: number, profileId: string = 'culture'): Promise<void> {
@@ -522,13 +538,15 @@ export class TimelineEngine implements ITimelineEngine {
     const dayIdx = timeline.findIndex((d) => d.dayNumber === dayNumber);
 
     if (dayIdx !== -1) {
-      const anchors = await this.getTripAnchors(cleanTripId);
+      const { anchors, accommodations, transports } = await this.getTripSetupData(cleanTripId);
       const newTimeline = [...timeline];
       newTimeline[dayIdx] = await journeyComposer.composeDayJourneyWithSIP(
         newTimeline[dayIdx],
         profileId,
         undefined,
-        anchors
+        anchors,
+        accommodations,
+        transports
       );
 
       this.timelineMap.set(cleanTripId, newTimeline);
@@ -564,7 +582,7 @@ export class TimelineEngine implements ITimelineEngine {
       dayIdx = timeline.length - 1;
     }
 
-    const anchors = await this.getTripAnchors(cleanTripId);
+    const { anchors, accommodations, transports } = await this.getTripSetupData(cleanTripId);
     const newTimeline = [...timeline];
     let deferredQueue = [...availablePlaces];
 
@@ -589,6 +607,8 @@ export class TimelineEngine implements ITimelineEngine {
         dateStr: currentSchedule.date,
         currentSchedule,
         anchors,
+        accommodations,
+        transports,
       });
 
       newTimeline[i] = newSchedule;

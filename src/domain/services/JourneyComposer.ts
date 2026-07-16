@@ -16,10 +16,13 @@ import {
   JourneyConstraints,
   JourneyDecision,
   JourneyReport,
-  JourneyAnchor
+  JourneyAnchor,
+  GeoLocation
 } from '../../core/engines/types/context.types';
 import { DistanceCalculator } from './DistanceCalculator';
 import { JourneyAnchorEngine } from './JourneyAnchorEngine';
+import { EndOfDayClosureService } from './EndOfDayClosureService';
+import { Accommodation, Transport } from '../trip/models/trip-setup.model';
 import { 
   CATEGORY_RULES, 
   SCORING_WEIGHTS, 
@@ -42,6 +45,8 @@ export interface ComposeJourneyOptions {
   // Journey Anchors del viaggio (arrivo/partenza) — se assenti, la giornata
   // non ha vincoli strutturali (comportamento invariato).
   anchors?: JourneyAnchor[];
+  accommodations?: Accommodation[];
+  transports?: Transport[];
 }
 
 /**
@@ -85,8 +90,22 @@ export class JourneyComposerService {
       scheduleToOptimize,
       style,
       options.customConstraints,
-      options.anchors || scheduleToOptimize.anchors
+      options.anchors || scheduleToOptimize.anchors,
+      options.accommodations,
+      options.transports
     );
+  }
+
+  public static normalizeCoordinates(coords?: any): GeoLocation | undefined {
+    if (!coords || typeof coords !== 'object') return undefined;
+    const lat = typeof coords.lat === 'number' && !isNaN(coords.lat) ? coords.lat
+              : typeof coords.latitude === 'number' && !isNaN(coords.latitude) ? coords.latitude
+              : undefined;
+    const lng = typeof coords.lng === 'number' && !isNaN(coords.lng) ? coords.lng
+              : typeof coords.longitude === 'number' && !isNaN(coords.longitude) ? coords.longitude
+              : undefined;
+    if (lat === undefined || lng === undefined) return undefined;
+    return { latitude: lat, longitude: lng };
   }
 
   public generateDaySchedule(
@@ -102,37 +121,42 @@ export class JourneyComposerService {
     const cleanInput = places.filter(p => p.id !== 'hotel-start' && p.id !== 'hotel-end');
     let finalPlaces = cleanInput;
 
-    // Se la giornata è già delimitata da Journey Anchor reali (arrivo/check-in
-    // o check-out/partenza), l'assunzione "la giornata parte/torna in
-    // alloggio" non si applica più: gli anchor sono l'inizio/fine reali,
-    // il blocco sintetico "hotel-start/end" non va aggiunto.
-    const hasJourneyAnchors = cleanInput.some(p => !!p.journeyAnchorKind);
+    const hasLegacyAnchors = cleanInput.some(
+      (p) => !!p.journeyAnchorKind && p.journeyAnchorKind !== 'accommodation_return'
+    );
 
-    if (cleanInput.length > 0 && !hasJourneyAnchors) {
+    if (cleanInput.length > 0 && !hasLegacyAnchors) {
       const firstRealPlace = cleanInput[0];
       const lastRealPlace = cleanInput[cleanInput.length - 1];
+      const firstCoords = JourneyComposerService.normalizeCoordinates(firstRealPlace.coordinates);
+      const lastCoords = JourneyComposerService.normalizeCoordinates(lastRealPlace.coordinates);
 
       const hotelStart: PlaceRef = {
         id: 'hotel-start',
         name: 'Alloggio (Partenza)',
         category: 'hotel',
-        coordinates: firstRealPlace.coordinates,
+        coordinates: firstCoords,
         durationMinutes: 30,
         isBlock: true,
         address: 'Punto di partenza della giornata',
       };
 
-      const hotelEnd: PlaceRef = {
-        id: 'hotel-end',
-        name: 'Alloggio (Ritorno)',
-        category: 'hotel',
-        coordinates: lastRealPlace.coordinates,
-        durationMinutes: 30,
-        isBlock: true,
-        address: 'Punto di rientro a fine giornata',
-      };
+      const hasEndReturn = cleanInput.some((p) => p.journeyAnchorKind === 'accommodation_return');
 
-      finalPlaces = [hotelStart, ...cleanInput, hotelEnd];
+      if (hasEndReturn) {
+        finalPlaces = [hotelStart, ...cleanInput];
+      } else {
+        const hotelEnd: PlaceRef = {
+          id: 'hotel-end',
+          name: 'Alloggio (Ritorno)',
+          category: 'hotel',
+          coordinates: lastCoords,
+          durationMinutes: 30,
+          isBlock: true,
+          address: 'Punto di rientro a fine giornata',
+        };
+        finalPlaces = [hotelStart, ...cleanInput, hotelEnd];
+      }
     }
 
     const enrichedPlaces: PlaceRef[] = finalPlaces.map((place, index) => {
@@ -374,7 +398,9 @@ export class JourneyComposerService {
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
     customConstraints?: JourneyConstraints,
-    anchors?: JourneyAnchor[]
+    anchors?: JourneyAnchor[],
+    accommodations?: Accommodation[],
+    transports?: Transport[]
   ): Promise<TimelineDaySchedule> {
     const dayAnchors = anchors || currentSchedule.anchors || [];
     const activityWindow = JourneyAnchorEngine.getDayActivityWindow(dayAnchors, currentSchedule.date);
@@ -535,8 +561,11 @@ export class JourneyComposerService {
         // nessuna attività può finire dopo il tetto imposto o lo spazio utile rimasto.
         const projectedDuration = evaluation.overrideVisitDuration || candidate.durationMinutes || 60;
         let travelMinutesToCandidate = 0;
-        if (current && current.coordinates && candidate.coordinates) {
-          const dist = DistanceCalculator.calculateHaversineDistance(current.coordinates, candidate.coordinates);
+        const currentCoords = JourneyComposerService.normalizeCoordinates(current?.coordinates);
+        const candidateCoords = JourneyComposerService.normalizeCoordinates(candidate?.coordinates);
+
+        if (currentCoords && candidateCoords) {
+          const dist = DistanceCalculator.calculateHaversineDistance(currentCoords, candidateCoords);
           travelMinutesToCandidate = dist > 3000
             ? DistanceCalculator.estimateDrivingDurationMinutes(dist, dist > 30000 ? 80 : 40)
             : DistanceCalculator.estimateWalkingDurationMinutes(dist);
@@ -548,8 +577,8 @@ export class JourneyComposerService {
         }
 
         let geoScore = 0;
-        if (current) {
-          const dist = DistanceCalculator.calculateHaversineDistance(current.coordinates, candidate.coordinates);
+        if (currentCoords && candidateCoords) {
+          const dist = DistanceCalculator.calculateHaversineDistance(currentCoords, candidateCoords);
           geoScore = (SCORING_WEIGHTS.DISTANCE_MAX - dist) * 0.1;
         }
 
@@ -573,7 +602,7 @@ export class JourneyComposerService {
           id: eventId,
           name: event.name,
           category: event.type,
-          coordinates: current ? current.coordinates : pool[bestIdx].coordinates,
+          coordinates: JourneyComposerService.normalizeCoordinates(current ? current.coordinates : pool[bestIdx].coordinates),
           isBlock: true,
           durationMinutes: event.durationMinutes,
           role: event.type === 'lunch' || event.type === 'dinner' ? 'food' : 'free_time',
@@ -648,6 +677,111 @@ export class JourneyComposerService {
     }
 
     composedPlaces.push(...hardAnchors);
+
+    // Regola C (Sprint 18 — Fase 7): integrazione di EndOfDayClosureService dopo che
+    // attività, pasti e coda di pianificazione sono stati risolti e prima di endAnchorBlocks.
+    const effectiveAccommodations = accommodations || [];
+    const effectiveTransports = transports || [];
+
+    let lastActivityEndMinutes = currentMinutesSinceMidnight;
+    for (const p of [...composedPlaces, ...hardAnchors]) {
+      if (p.scheduledTime) {
+        const d = new Date(p.scheduledTime);
+        const startM = !isNaN(d.getTime()) ? d.getUTCHours() * 60 + d.getUTCMinutes() : this.parseTime(p.scheduledTime);
+        if (!isNaN(startM)) {
+          lastActivityEndMinutes = Math.max(lastActivityEndMinutes, startM + (p.durationMinutes || 0));
+        }
+      } else if (p.calculatedEndTime) {
+        const endM = this.parseTime(p.calculatedEndTime);
+        if (!isNaN(endM) && endM > 0) {
+          lastActivityEndMinutes = Math.max(lastActivityEndMinutes, endM);
+        }
+      }
+    }
+
+    const lastPlaceWithCoords = [...composedPlaces, ...hardAnchors].reverse().find(p => p.coordinates);
+    const lastCoords = JourneyComposerService.normalizeCoordinates(lastPlaceWithCoords?.coordinates);
+
+    const nightAccommodation = effectiveAccommodations.find(
+      (a: any) => {
+        const checkInStr = typeof a.checkIn === 'string' ? a.checkIn : a.checkIn.toISOString();
+        const checkOutStr = typeof a.checkOut === 'string' ? a.checkOut : a.checkOut.toISOString();
+        return checkInStr.slice(0, 10) <= currentSchedule.date && checkOutStr.slice(0, 10) > currentSchedule.date;
+      }
+    );
+    const nightAccommodationCoords = JourneyComposerService.normalizeCoordinates(nightAccommodation?.coordinates);
+
+    let returnTravelMinutes = 0;
+    if (lastCoords && nightAccommodationCoords) {
+      const dist = DistanceCalculator.calculateHaversineDistance(lastCoords, nightAccommodationCoords);
+      returnTravelMinutes = dist > 3000
+        ? DistanceCalculator.estimateDrivingDurationMinutes(dist, dist > 30000 ? 80 : 40)
+        : DistanceCalculator.estimateWalkingDurationMinutes(dist);
+    }
+
+    const allNodesBeforeEnd = [...composedPlaces, ...hardAnchors, ...endAnchorBlocks];
+    const lastNode = allNodesBeforeEnd.length > 0 ? allNodesBeforeEnd[allNodesBeforeEnd.length - 1] : undefined;
+
+    const shouldReturn = EndOfDayClosureService.shouldReturnToAccommodation({
+      dateStr: currentSchedule.date,
+      lastNodeAnchorKind: lastNode?.journeyAnchorKind,
+      accommodations: effectiveAccommodations,
+      transports: effectiveTransports,
+      lastActivityEndMinutes,
+      dayEndMinutes: ceilingMinutes,
+      returnTravelMinutes,
+    });
+
+    const hasClosingOrDeparture = allNodesBeforeEnd.some(
+      (p) =>
+        p.journeyAnchorKind &&
+        (p.journeyAnchorKind === 'accommodation_return' ||
+          p.journeyAnchorKind === 'check_out' ||
+          JourneyAnchorEngine.isDepartureAnchorKind(p.journeyAnchorKind))
+    );
+
+    if (shouldReturn && !hasClosingOrDeparture) {
+      const returnStartMinutes = Math.min(
+        lastActivityEndMinutes + returnTravelMinutes,
+        Math.max(lastActivityEndMinutes, ceilingMinutes - 30)
+      );
+      const startTimeStr = this.formatTime(returnStartMinutes);
+      const endTimeStr = this.formatTime(returnStartMinutes + 30);
+      // scheduledTime va espresso come istante ISO reale (stessa convenzione di
+      // JourneyAnchorEngine.toPlaceRefs), non come stringa "HH:mm": generateDaySchedule
+      // lo rilegge con `new Date(place.scheduledTime)` per avanzare l'orologio interno.
+      // Costruito da componenti locali (anno/mese/giorno + minuti) così che il
+      // round-trip toISOString() -> new Date().getHours()/getMinutes() nel Composer
+      // recuperi esattamente gli stessi minuti, indipendentemente dal fuso orario
+      // della macchina che esegue il calcolo.
+      const [returnYear, returnMonth, returnDay] = currentSchedule.date.split('-').map(Number);
+      const returnScheduledDate = new Date(returnYear, returnMonth - 1, returnDay, 0, 0, 0, 0);
+      returnScheduledDate.setMinutes(returnStartMinutes);
+      const scheduledTimeISO = returnScheduledDate.toISOString();
+
+      const returnPlace: PlaceRef = {
+        id: `anchor-accommodation-return-${nightAccommodation?.id || 'default'}-${currentSchedule.date}`,
+        name: `Rientro in struttura — ${nightAccommodation ? nightAccommodation.name : 'Alloggio'}`,
+        category: 'accommodation_return',
+        coordinates: nightAccommodationCoords
+          ? {
+              latitude: nightAccommodationCoords.latitude,
+              longitude: nightAccommodationCoords.longitude,
+            }
+          : (lastCoords ? { ...lastCoords } : undefined),
+        isBlock: true,
+        isLocked: true,
+        durationMinutes: 30,
+        role: 'anchor',
+        anchorType: 'HARD',
+        journeyAnchorKind: 'accommodation_return',
+        scheduledTime: scheduledTimeISO,
+        calculatedStartTime: startTimeStr,
+        calculatedEndTime: endTimeStr,
+      };
+      composedPlaces.push(returnPlace);
+    }
+
     composedPlaces.push(...endAnchorBlocks);
 
     const generated = this.generateDaySchedule(
@@ -747,9 +881,11 @@ export class JourneyComposerService {
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
     customConstraints?: JourneyConstraints,
-    anchors?: JourneyAnchor[]
+    anchors?: JourneyAnchor[],
+    accommodations?: Accommodation[],
+    transports?: Transport[]
   ): Promise<TimelineDaySchedule> {
-    const composed = await this.composeDayJourney(currentSchedule, profileId, customConstraints, anchors);
+    const composed = await this.composeDayJourney(currentSchedule, profileId, customConstraints, anchors, accommodations, transports);
     if (!composed.places || composed.places.length === 0) return composed;
 
     const refPlace = composed.places.find(p => p.coordinates);
@@ -1006,17 +1142,21 @@ export class JourneyComposer {
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
     customConstraints?: JourneyConstraints,
-    anchors?: JourneyAnchor[]
+    anchors?: JourneyAnchor[],
+    accommodations?: Accommodation[],
+    transports?: Transport[]
   ): Promise<TimelineDaySchedule> {
-    return await journeyComposer.composeDayJourney(currentSchedule, profileId, customConstraints, anchors);
+    return await journeyComposer.composeDayJourney(currentSchedule, profileId, customConstraints, anchors, accommodations, transports);
   }
   public static async composeDayJourneyWithSIP(
     currentSchedule: TimelineDaySchedule,
     profileId: string = 'culture',
     customConstraints?: JourneyConstraints,
-    anchors?: JourneyAnchor[]
+    anchors?: JourneyAnchor[],
+    accommodations?: Accommodation[],
+    transports?: Transport[]
   ): Promise<TimelineDaySchedule> {
-    return journeyComposer.composeDayJourneyWithSIP(currentSchedule, profileId, customConstraints, anchors);
+    return journeyComposer.composeDayJourneyWithSIP(currentSchedule, profileId, customConstraints, anchors, accommodations, transports);
   }
   public static calculateRuntimeStatus(schedule: TimelineDaySchedule, currentTimeMinutes?: number): JourneyStatus {
     return journeyComposer.calculateRuntimeStatus(schedule, currentTimeMinutes);
