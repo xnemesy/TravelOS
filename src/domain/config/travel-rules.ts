@@ -230,10 +230,10 @@ export function inferPlaceRole(place: PlaceRef): PlaceRole {
   const cat = place.category?.toLowerCase() || '';
   const dur = place.durationMinutes || CATEGORY_RULES[cat]?.defaultDurationMinutes || 60;
 
-  if (cat === 'lunch' || cat === 'dinner' || cat === 'restaurant') return 'food';
+  if (cat === 'lunch' || cat === 'dinner' || cat === 'restaurant' || cat === 'meal_break') return 'food';
   if (cat === 'breakfast' || cat === 'coffee' || cat === 'bar' || cat === 'drinks') return 'coffee';
   if (cat === 'sunset' || cat === 'viewpoint') return 'viewpoint';
-  if (cat === 'park' || cat === 'spa' || cat === 'nature') return 'relax';
+  if (cat === 'park' || cat === 'spa' || cat === 'nature' || cat === 'relax') return 'relax';
   if (cat === 'shopping') return 'shopping';
   if (cat === 'transfer') return 'transfer';
   if (cat === 'free_time') return 'free_time';

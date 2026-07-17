@@ -57,6 +57,8 @@ export interface ComposeJourneyOptions {
  * Rispetta il flusso filosofico: Catalogo -> Libreria -> Journey Composer -> Itinerario.
  * Non inventa mai luoghi esterni: lavora esclusivamente sui luoghi resi disponibili.
  */
+const RESTORATIVE_ROLES = new Set(['food', 'coffee', 'meal_break', 'relax', 'free_time']);
+
 export class JourneyComposerService {
   /**
    * Punto di ingresso unificato per la composizione della giornata.
@@ -965,7 +967,10 @@ export class JourneyComposerService {
     let indoorCount = 0;
 
     for (const p of places) {
-      if (p.role === 'food' || p.role === 'coffee' || p.role === 'free_time' || p.isBlock) breaksCount++;
+      const role = p.role || inferPlaceRole(p);
+      if (RESTORATIVE_ROLES.has(role as string)) {
+        breaksCount++;
+      }
       const rule = CATEGORY_RULES[p.category];
       if (rule?.weatherPreference === 'indoor') indoorCount++;
       else if (rule?.weatherPreference === 'outdoor' || rule?.weatherPreference === 'sunny' || rule?.weatherPreference === 'golden_hour') outdoorCount++;

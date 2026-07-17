@@ -511,3 +511,256 @@ describe('JourneyComposer coordinate normalization and geoScore evaluation', () 
     expect(result.places.some(p => p.id === 'no-coords-place')).toBe(true);
   });
 });
+
+describe('JourneyComposer.calculateRuntimeHealth break counting', () => {
+  const baseSchedule = {
+    dayNumber: 1,
+    date: '2026-08-01',
+    places: [] as PlaceRef[],
+    totalWalkDistanceMeters: 2000,
+    totalEstimatedDurationMinutes: 360,
+    overview: {
+      experiencesCount: 0,
+      startTime: '09:00',
+      endTime: '18:00',
+      foodStopsCount: 0,
+    },
+  };
+
+  it('1. Only transfers -> 0 breaks', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 't-1',
+          name: 'Transfer Aeroporto -> Centro',
+          category: 'transfer',
+          role: 'transfer',
+          isBlock: true,
+          durationMinutes: 45,
+        } as PlaceRef,
+        {
+          id: 't-2',
+          name: 'Transfer Centro -> Aeroporto',
+          category: 'departure_transfer',
+          role: 'transfer',
+          isBlock: true,
+          durationMinutes: 45,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(0);
+  });
+
+  it('2. Arrival + hotel check-in -> 0 breaks', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'arr-1',
+          name: 'Volo di Arrivo',
+          category: 'arrival_flight',
+          role: 'anchor',
+          isBlock: true,
+          durationMinutes: 120,
+        } as PlaceRef,
+        {
+          id: 'checkin-1',
+          name: 'Check-in Hotel',
+          category: 'check_in',
+          role: 'anchor',
+          isBlock: true,
+          durationMinutes: 30,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(0);
+  });
+
+  it('3. Lunch stop -> 1 break', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'lunch-1',
+          name: 'Pranzo Tipico',
+          category: 'lunch',
+          role: 'food',
+          isBlock: false,
+          durationMinutes: 60,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+
+  it('4. Coffee stop -> 1 break', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'coffee-1',
+          name: 'Caffè Storico',
+          category: 'coffee',
+          role: 'coffee',
+          isBlock: false,
+          durationMinutes: 20,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+
+  it('5. Generated meal_break -> counts', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'gap-meal-1',
+          name: 'Pausa pasto',
+          category: 'meal_break',
+          role: 'meal_break',
+          isBlock: true,
+          durationMinutes: 60,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+
+  it('6. Generated relax -> counts', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'gap-relax-1',
+          name: 'Relax al Parco',
+          category: 'relax',
+          role: 'relax',
+          isBlock: true,
+          durationMinutes: 45,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+
+  it('7. Generated transit_buffer -> does NOT count', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'gap-buffer-1',
+          name: 'Cuscinetto transito',
+          category: 'transit_buffer',
+          role: 'transit_buffer',
+          isBlock: true,
+          durationMinutes: 15,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(0);
+  });
+
+  it('8. Generated waiting_time -> does NOT count', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'gap-wait-1',
+          name: 'Attesa prima della partenza',
+          category: 'waiting_time',
+          role: 'waiting_time',
+          isBlock: true,
+          durationMinutes: 30,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(0);
+  });
+
+  it('9. Mixed day with transfers and lunch', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'arr-1',
+          name: 'Arrivo Aeroporto',
+          category: 'arrival_airport',
+          role: 'anchor',
+          isBlock: true,
+          durationMinutes: 30,
+        } as PlaceRef,
+        {
+          id: 't-1',
+          name: 'Transfer Aeroporto -> Centro',
+          category: 'transfer',
+          role: 'transfer',
+          isBlock: true,
+          durationMinutes: 45,
+        } as PlaceRef,
+        {
+          id: 'p-1',
+          name: 'Colosseo',
+          category: 'landmark',
+          role: 'hero_experience',
+          isBlock: false,
+          durationMinutes: 120,
+        } as PlaceRef,
+        {
+          id: 'lunch-1',
+          name: 'Trattoria Romana',
+          category: 'lunch',
+          role: 'food',
+          isBlock: false,
+          durationMinutes: 60,
+        } as PlaceRef,
+        {
+          id: 'gap-buffer-1',
+          name: 'Cuscinetto',
+          category: 'buffer',
+          role: 'buffer',
+          isBlock: true,
+          durationMinutes: 15,
+        } as PlaceRef,
+        {
+          id: 't-2',
+          name: 'Transfer Ritorno',
+          category: 'departure_transfer',
+          role: 'transfer',
+          isBlock: true,
+          durationMinutes: 45,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+
+  it('10. Existing tests remain green and free_time counts as break regardless of isBlock', () => {
+    const schedule = {
+      ...baseSchedule,
+      places: [
+        {
+          id: 'f-1',
+          name: 'Tempo libero al porto',
+          category: 'free_time',
+          role: 'free_time',
+          isBlock: false,
+          durationMinutes: 60,
+        } as PlaceRef,
+      ],
+    };
+    const health = journeyComposer.calculateRuntimeHealth(schedule);
+    expect(health.breaksCount).toBe(1);
+  });
+});
+
