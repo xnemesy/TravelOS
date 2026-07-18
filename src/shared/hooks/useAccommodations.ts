@@ -19,7 +19,7 @@ export function useAccommodations(tripId: string | string[]): AccommodationsSlic
   const context = useTravelContext(cleanTripId);
 
   const accommodations = [...(context.accommodations || [])].sort(
-    (a, b) => a.checkIn.getTime() - b.checkIn.getTime()
+    (a, b) => new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime()
   );
 
   return {

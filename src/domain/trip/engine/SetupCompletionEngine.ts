@@ -191,14 +191,17 @@ export class SetupCompletionEngine {
       warnings.push('Nessun volo o trasporto configurato (Opzionale)');
     } else {
       for (const t of transports) {
-        if (t.arrivalDate && t.arrivalDate < t.departureDate) {
+        // ADR-025 §7 n: departureDate/arrivalDate sono InstantISO (stringhe).
+        // `new Date(...)` mantiene identica la semantica numerica di confronto
+        // rispetto ai `Date` precedenti (nessun cambio di comportamento).
+        if (t.arrivalDate && new Date(t.arrivalDate) < new Date(t.departureDate)) {
           warnings.push(`Il trasporto verso ${t.destination || 'destinazione'} ha data di arrivo precedente alla partenza`);
         }
         if (startOfDay && endOfDay) {
-          if (t.departureDate < startOfDay || t.departureDate > endOfDay) {
+          if (new Date(t.departureDate) < startOfDay || new Date(t.departureDate) > endOfDay) {
             warnings.push(`Il trasporto verso ${t.destination || 'destinazione'} (partenza) è fuori dalle date del viaggio`);
           }
-          if (t.arrivalDate && (t.arrivalDate < startOfDay || t.arrivalDate > endOfDay)) {
+          if (t.arrivalDate && (new Date(t.arrivalDate) < startOfDay || new Date(t.arrivalDate) > endOfDay)) {
             warnings.push(`Il trasporto verso ${t.destination || 'destinazione'} (arrivo) è fuori dalle date del viaggio`);
           }
         }
@@ -217,11 +220,13 @@ export class SetupCompletionEngine {
       warnings.push('Nessun alloggio configurato per un viaggio di più notti (Opzionale)');
     } else if (Array.isArray(accommodations)) {
       for (const a of accommodations) {
-        if (a.checkOut <= a.checkIn) {
+        // ADR-025 §7 n: checkIn/checkOut sono InstantISO (stringhe); vedi nota
+        // sui trasporti sopra — confronto via `new Date(...)`, semantica invariata.
+        if (new Date(a.checkOut) <= new Date(a.checkIn)) {
           warnings.push(`L'alloggio ${a.name || 'selezionato'} ha data di check-out non successiva al check-in`);
         }
         if (startOfDay && endOfDay) {
-          if (a.checkIn < startOfDay || a.checkOut > endOfDay) {
+          if (new Date(a.checkIn) < startOfDay || new Date(a.checkOut) > endOfDay) {
             warnings.push(`L'alloggio ${a.name || 'selezionato'} è fuori dalle date del viaggio`);
           }
         }

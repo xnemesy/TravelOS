@@ -94,8 +94,8 @@ export class LuggagePlanningService {
     if (arrivalTransport && firstAccommodation && firstPolicy?.allowsLuggageDropoff === true) {
       // Senza arrivalDate nota, l'unico istante certo è la partenza della
       // tratta di arrivo (coerente con JourneyAnchorEngine).
-      const arrivalISO = (arrivalTransport.arrivalDate || arrivalTransport.departureDate).toISOString();
-      const checkInISO = firstAccommodation.checkIn.toISOString();
+      const arrivalISO = new Date(arrivalTransport.arrivalDate || arrivalTransport.departureDate).toISOString();
+      const checkInISO = new Date(firstAccommodation.checkIn).toISOString();
       const arrivalMs = new Date(arrivalISO).getTime();
       const checkInMs = new Date(checkInISO).getTime();
 
@@ -129,8 +129,8 @@ export class LuggagePlanningService {
     // anchor sovrapposti (Regola 4); il rientro si aggiunge solo se ci sta.
     // ------------------------------------------------------------------
     if (departureTransport && lastAccommodation && lastPolicy?.allowsLuggageDropoff === true) {
-      const checkOutISO = lastAccommodation.checkOut.toISOString();
-      const departureISO = departureTransport.departureDate.toISOString();
+      const checkOutISO = new Date(lastAccommodation.checkOut).toISOString();
+      const departureISO = new Date(departureTransport.departureDate).toISOString();
       const checkOutMs = new Date(checkOutISO).getTime();
       const departureMs = new Date(departureISO).getTime();
       const windowMs = departureMs - checkOutMs;

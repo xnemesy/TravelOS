@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../time';
 import { Accommodation, HotelPolicy, Transport } from '../trip/models/trip-setup.model';
 import { JourneyAnchor } from '../../core/engines/types/context.types';
 import { LuggagePlanningService } from './LuggagePlanningService';
@@ -12,7 +13,7 @@ describe('LuggagePlanningService', () => {
     id: 'transport-1',
     mode: 'flight',
     destination: 'Lisbona',
-    departureDate: new Date('2026-08-01T08:00:00.000Z'),
+    departureDate: unsafeAsInstantISO('2026-08-01T08:00:00.000Z'),
     confirmed: false,
     ...overrides,
   });
@@ -21,8 +22,8 @@ describe('LuggagePlanningService', () => {
     id: 'acc-1',
     type: 'hotel',
     name: 'Hotel Central',
-    checkIn: new Date('2026-08-01T15:00:00.000Z'),
-    checkOut: new Date('2026-08-05T10:00:00.000Z'),
+    checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+    checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
     confirmed: false,
     coordinates: { lat: 38.72, lng: -9.14 },
     ...overrides,
@@ -68,12 +69,12 @@ describe('LuggagePlanningService', () => {
   it('genera un solo luggage_dropoff quando arrivo precede check-in e il deposito è consentito', () => {
     const transports = [
       buildTransport({
-        arrivalDate: new Date('2026-08-01T09:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z'),
       }),
     ];
     const accommodations = [
       buildAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
       }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
@@ -95,12 +96,12 @@ describe('LuggagePlanningService', () => {
   it('usa departureDate come istante di arrivo quando arrivalDate è assente', () => {
     const transports = [
       buildTransport({
-        departureDate: new Date('2026-08-01T09:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z'),
         arrivalDate: undefined,
       }),
     ];
     const accommodations = [
-      buildAccommodation({ checkIn: new Date('2026-08-01T15:00:00.000Z') }),
+      buildAccommodation({ checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -112,10 +113,10 @@ describe('LuggagePlanningService', () => {
 
   it('limita la fine del dropoff al check-in quando la finestra è più corta della durata forfettaria', () => {
     const transports = [
-      buildTransport({ arrivalDate: new Date('2026-08-01T14:55:00.000Z') }),
+      buildTransport({ arrivalDate: unsafeAsInstantISO('2026-08-01T14:55:00.000Z') }),
     ];
     const accommodations = [
-      buildAccommodation({ checkIn: new Date('2026-08-01T15:00:00.000Z') }),
+      buildAccommodation({ checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -128,10 +129,10 @@ describe('LuggagePlanningService', () => {
 
   it('non genera dropoff di arrivo quando arrivo coincide o segue il check-in', () => {
     const transports = [
-      buildTransport({ arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
     ];
     const accommodations = [
-      buildAccommodation({ checkIn: new Date('2026-08-01T15:00:00.000Z') }),
+      buildAccommodation({ checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -150,21 +151,21 @@ describe('LuggagePlanningService', () => {
         id: 't-arrival',
         // Arrivo all'orario di check-in: nessuna finestra di deposito all'arrivo,
         // così il test isola lo scenario di partenza.
-        arrivalDate: new Date('2026-08-01T15:00:00.000Z'),
-        departureDate: new Date('2026-08-01T12:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-01T12:00:00.000Z'),
       }),
       // Partenza (tratta 2) — volo serale.
       buildTransport({
         id: 't-departure',
         origin: 'Lisbona',
         destination: 'Roma',
-        departureDate: new Date('2026-08-05T20:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z'),
       }),
     ];
     const accommodations = [
       buildAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
       }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
@@ -189,17 +190,17 @@ describe('LuggagePlanningService', () => {
 
   it('genera solo dropoff e pickup (senza accommodation_return) quando la finestra è stretta', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
       buildTransport({
         id: 't-departure',
         destination: 'Roma',
         // check-out 10:00, volo 10:35 → finestra 35 min: entra solo dropoff+pickup
         // (2×15 = 30 ≤ 35 < 45 = 3×15).
-        departureDate: new Date('2026-08-05T10:35:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T10:35:00.000Z'),
       }),
     ];
     const accommodations = [
-      buildAccommodation({ checkOut: new Date('2026-08-05T10:00:00.000Z') }),
+      buildAccommodation({ checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -210,16 +211,16 @@ describe('LuggagePlanningService', () => {
 
   it('non genera anchor di partenza quando la finestra check-out→volo è troppo stretta', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
       buildTransport({
         id: 't-departure',
         destination: 'Roma',
         // Finestra 20 min < 2×15: nessun anchor per non sovrapporre.
-        departureDate: new Date('2026-08-05T10:20:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T10:20:00.000Z'),
       }),
     ];
     const accommodations = [
-      buildAccommodation({ checkOut: new Date('2026-08-05T10:00:00.000Z') }),
+      buildAccommodation({ checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -230,16 +231,16 @@ describe('LuggagePlanningService', () => {
 
   it('omette accommodation_return quando la struttura non ha coordinate note', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
       buildTransport({
         id: 't-departure',
         destination: 'Roma',
-        departureDate: new Date('2026-08-05T20:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z'),
       }),
     ];
     const accommodations = [
       buildAccommodation({
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
         coordinates: undefined,
       }),
     ];
@@ -253,10 +254,10 @@ describe('LuggagePlanningService', () => {
 
   it('non genera anchor di partenza con una sola tratta (viaggio di sola andata)', () => {
     const transports = [
-      buildTransport({ arrivalDate: new Date('2026-08-01T14:00:00.000Z') }),
+      buildTransport({ arrivalDate: unsafeAsInstantISO('2026-08-01T14:00:00.000Z') }),
     ];
     const accommodations = [
-      buildAccommodation({ checkOut: new Date('2026-08-05T10:00:00.000Z') }),
+      buildAccommodation({ checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -272,8 +273,8 @@ describe('LuggagePlanningService', () => {
   // ------------------------------------------------------------------
   it('non genera alcun anchor quando non ci sono accommodation', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
-      buildTransport({ id: 't-departure', departureDate: new Date('2026-08-05T20:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ id: 't-departure', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -301,22 +302,22 @@ describe('LuggagePlanningService', () => {
   // ------------------------------------------------------------------
   it('usa la prima accommodation per l\'arrivo e l\'ultima per la partenza', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
-      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: new Date('2026-08-06T20:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
+      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: unsafeAsInstantISO('2026-08-06T20:00:00.000Z') }),
     ];
     const accommodations = [
       buildAccommodation({
         id: 'acc-first',
         name: 'Hotel Uno',
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-03T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'),
         coordinates: { lat: 1, lng: 1 },
       }),
       buildAccommodation({
         id: 'acc-last',
         name: 'Hotel Due',
-        checkIn: new Date('2026-08-03T16:00:00.000Z'),
-        checkOut: new Date('2026-08-06T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-03T16:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-06T10:00:00.000Z'),
         coordinates: { lat: 2, lng: 2 },
       }),
     ];
@@ -342,16 +343,16 @@ describe('LuggagePlanningService', () => {
   // ------------------------------------------------------------------
   it('gestisce anchor di partenza che attraversano la mezzanotte con date UTC corrette', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T15:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z') }),
       buildTransport({
         id: 't-departure',
         destination: 'Roma',
         // Volo alle 00:10 del giorno dopo il check-out serale.
-        departureDate: new Date('2026-08-06T00:10:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-06T00:10:00.000Z'),
       }),
     ];
     const accommodations = [
-      buildAccommodation({ checkOut: new Date('2026-08-05T23:00:00.000Z') }),
+      buildAccommodation({ checkOut: unsafeAsInstantISO('2026-08-05T23:00:00.000Z') }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
 
@@ -374,13 +375,13 @@ describe('LuggagePlanningService', () => {
   // ------------------------------------------------------------------
   it('restituisce sempre gli anchor ordinati cronologicamente su tutto il viaggio', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
-      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: new Date('2026-08-05T20:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
+      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z') }),
     ];
     const accommodations = [
       buildAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
       }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
@@ -405,13 +406,13 @@ describe('LuggagePlanningService', () => {
 
   it('non genera mai anchor sovrapposti tra loro (Regola 4)', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
-      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: new Date('2026-08-05T20:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
+      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z') }),
     ];
     const accommodations = [
       buildAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
       }),
     ];
     const policy: HotelPolicy = { allowsLuggageDropoff: true };
@@ -431,22 +432,22 @@ describe('LuggagePlanningService', () => {
   // ------------------------------------------------------------------
   it('rispetta la policy della singola struttura quando Hotel A ammette il deposito e Hotel B no', () => {
     const transports = [
-      buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
-      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: new Date('2026-08-05T20:00:00.000Z') }),
+      buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
+      buildTransport({ id: 't-departure', destination: 'Roma', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z') }),
     ];
     const accommodations = [
       buildAccommodation({
         id: 'acc-hotel-a',
         name: 'Hotel A (consente deposito)',
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-03T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'),
         hotelPolicy: { allowsLuggageDropoff: true },
       }),
       buildAccommodation({
         id: 'acc-hotel-b',
         name: 'Hotel B (non consente deposito)',
-        checkIn: new Date('2026-08-03T16:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-03T16:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
         hotelPolicy: { allowsLuggageDropoff: false },
       }),
     ];

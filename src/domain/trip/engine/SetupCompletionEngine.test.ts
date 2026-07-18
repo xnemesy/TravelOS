@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../../time';
 import { SetupCompletionEngine } from './SetupCompletionEngine';
 import { TripSetup } from '../models/trip-setup.model';
 
@@ -16,7 +17,7 @@ const oneTransport = [
     id: 't1',
     mode: 'flight' as const,
     destination: 'Budapest',
-    departureDate: new Date('2026-08-01T00:00:00.000Z'),
+    departureDate: unsafeAsInstantISO('2026-08-01T00:00:00.000Z'),
     confirmed: false,
   },
 ];
@@ -26,8 +27,8 @@ const oneAccommodation = [
     id: 'a1',
     type: 'hotel' as const,
     name: 'Hotel Danubio',
-    checkIn: new Date('2026-08-01T14:00:00.000Z'),
-    checkOut: new Date('2026-08-05T10:00:00.000Z'),
+    checkIn: unsafeAsInstantISO('2026-08-01T14:00:00.000Z'),
+    checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
     confirmed: false,
   },
 ];
@@ -315,8 +316,8 @@ describe('SetupCompletionEngine.evaluateSetup — completezza e pesi (30/20/20/1
       transports: [
         {
           ...oneTransport[0],
-          departureDate: new Date('2026-08-02T18:00:00.000Z'),
-          arrivalDate: new Date('2026-08-02T10:00:00.000Z'), // arrivo prima della partenza
+          departureDate: unsafeAsInstantISO('2026-08-02T18:00:00.000Z'),
+          arrivalDate: unsafeAsInstantISO('2026-08-02T10:00:00.000Z'), // arrivo prima della partenza
         },
       ],
     });
@@ -331,8 +332,8 @@ describe('SetupCompletionEngine.evaluateSetup — completezza e pesi (30/20/20/1
       accommodations: [
         {
           ...oneAccommodation[0],
-          checkIn: new Date('2026-08-03T14:00:00.000Z'),
-          checkOut: new Date('2026-08-03T10:00:00.000Z'), // check-out prima del check-in
+          checkIn: unsafeAsInstantISO('2026-08-03T14:00:00.000Z'),
+          checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'), // check-out prima del check-in
         },
       ],
     });

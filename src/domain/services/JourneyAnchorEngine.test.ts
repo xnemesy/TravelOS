@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../time';
 import { JourneyAnchorEngine } from './JourneyAnchorEngine';
 import { Transport, Accommodation } from '../trip/models/trip-setup.model';
 
@@ -6,7 +7,7 @@ function makeTransport(overrides: Partial<Transport>): Transport {
     id: 'transport-1',
     mode: 'flight',
     destination: 'Roma',
-    departureDate: new Date('2026-08-01T13:00:00.000Z'),
+    departureDate: unsafeAsInstantISO('2026-08-01T13:00:00.000Z'),
     confirmed: true,
     ...overrides,
   } as Transport;
@@ -17,8 +18,8 @@ function makeAccommodation(overrides: Partial<Accommodation>): Accommodation {
     id: 'accommodation-1',
     type: 'hotel',
     name: 'Hotel Roma',
-    checkIn: new Date('2026-08-01T15:00:00.000Z'),
-    checkOut: new Date('2026-08-05T10:00:00.000Z'),
+    checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+    checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
     confirmed: true,
     ...overrides,
   } as Accommodation;
@@ -29,15 +30,15 @@ describe('JourneyAnchorEngine.buildTripAnchors', () => {
     const transports: Transport[] = [
       makeTransport({
         id: 'in',
-        arrivalDate: new Date('2026-08-01T15:30:00.000Z'),
-        departureDate: new Date('2026-08-01T13:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-01T15:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-01T13:00:00.000Z'),
         origin: 'Milano',
         destination: 'Roma',
       }),
       makeTransport({
         id: 'out',
-        departureDate: new Date('2026-08-05T18:00:00.000Z'),
-        arrivalDate: new Date('2026-08-05T19:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T18:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-05T19:30:00.000Z'),
         origin: 'Roma',
         destination: 'Milano',
       }),
@@ -65,8 +66,8 @@ describe('JourneyAnchorEngine.buildTripAnchors', () => {
     const transports: Transport[] = [
       makeTransport({
         id: 'in',
-        arrivalDate: new Date('2026-08-01T15:30:00.000Z'),
-        departureDate: new Date('2026-08-01T13:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-01T15:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-01T13:00:00.000Z'),
       }),
     ];
     const accommodations: Accommodation[] = [makeAccommodation({})];
@@ -83,8 +84,8 @@ describe('JourneyAnchorEngine.buildTripAnchors', () => {
     const transports: Transport[] = [
       makeTransport({
         id: 'out',
-        departureDate: new Date('2026-08-05T18:00:00.000Z'),
-        arrivalDate: new Date('2026-08-05T19:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T18:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-05T19:30:00.000Z'),
       }),
     ];
     const accommodations: Accommodation[] = [makeAccommodation({})];
@@ -113,23 +114,23 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
     transports: [
       makeTransport({
         id: 'in',
-        departureDate: new Date('2026-08-01T07:00:00.000Z'),
-        arrivalDate: new Date('2026-08-01T09:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-01T07:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z'),
         origin: 'Milano',
         destination: 'Roma',
       }),
       makeTransport({
         id: 'out',
-        departureDate: new Date('2026-08-05T20:00:00.000Z'),
-        arrivalDate: new Date('2026-08-05T22:00:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-08-05T22:00:00.000Z'),
         origin: 'Roma',
         destination: 'Milano',
       }),
     ] as Transport[],
     accommodations: [
       makeAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
         coordinates: HOTEL_COORDS,
         hotelPolicy: DROPOFF_POLICY,
       }),
@@ -165,8 +166,8 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
 
   it('leaves the base anchors unchanged (no luggage kinds) when no HotelPolicy is set', () => {
     const transports: Transport[] = [
-      makeTransport({ id: 'in', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
-      makeTransport({ id: 'out', departureDate: new Date('2026-08-05T20:00:00.000Z') }),
+      makeTransport({ id: 'in', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
+      makeTransport({ id: 'out', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z') }),
     ];
     // makeAccommodation di default NON ha hotelPolicy → nessun anchor bagagli.
     const anchors = JourneyAnchorEngine.buildTripAnchors(transports, [makeAccommodation({})]);
@@ -208,8 +209,8 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
     // Stesso identico input senza hotelPolicy → nessun anchor bagagli generato.
     const noPolicyAccommodations: Accommodation[] = [
       makeAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
         coordinates: HOTEL_COORDS,
       }),
     ];
@@ -250,10 +251,10 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
   it('arrival-only trip: emits only the arrival luggage_dropoff, no departure luggage anchors', () => {
     // Una sola tratta → viaggio di sola andata, nessun anchor di partenza.
     const transports: Transport[] = [
-      makeTransport({ id: 'in', arrivalDate: new Date('2026-08-01T09:00:00.000Z'), destination: 'Roma' }),
+      makeTransport({ id: 'in', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z'), destination: 'Roma' }),
     ];
     const accommodations: Accommodation[] = [
-      makeAccommodation({ checkIn: new Date('2026-08-01T15:00:00.000Z'), hotelPolicy: DROPOFF_POLICY, coordinates: HOTEL_COORDS }),
+      makeAccommodation({ checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'), hotelPolicy: DROPOFF_POLICY, coordinates: HOTEL_COORDS }),
     ];
     const anchors = JourneyAnchorEngine.buildTripAnchors(transports, accommodations);
     const luggage = anchors.filter((a) => LUGGAGE_KINDS.has(a.kind));
@@ -265,13 +266,13 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
   it('departure-only trip: emits only the departure luggage anchors, no arrival dropoff', () => {
     // Round-trip ma arrivo all'orario di check-in → nessun dropoff d'arrivo.
     const transports: Transport[] = [
-      makeTransport({ id: 'in', arrivalDate: new Date('2026-08-01T15:00:00.000Z'), destination: 'Roma' }),
-      makeTransport({ id: 'out', departureDate: new Date('2026-08-05T20:00:00.000Z'), destination: 'Milano' }),
+      makeTransport({ id: 'in', arrivalDate: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'), destination: 'Roma' }),
+      makeTransport({ id: 'out', departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z'), destination: 'Milano' }),
     ];
     const accommodations: Accommodation[] = [
       makeAccommodation({
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-05T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
         hotelPolicy: DROPOFF_POLICY,
         coordinates: HOTEL_COORDS,
       }),
@@ -285,23 +286,23 @@ describe('JourneyAnchorEngine.buildTripAnchors — luggage integration (Sprint 1
 
   it('multi-hotel trip: arrival dropoff on first hotel, departure anchors on last hotel', () => {
     const transports: Transport[] = [
-      makeTransport({ id: 'in', arrivalDate: new Date('2026-08-01T09:00:00.000Z'), destination: 'Roma' }),
-      makeTransport({ id: 'out', departureDate: new Date('2026-08-06T20:00:00.000Z'), destination: 'Milano' }),
+      makeTransport({ id: 'in', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z'), destination: 'Roma' }),
+      makeTransport({ id: 'out', departureDate: unsafeAsInstantISO('2026-08-06T20:00:00.000Z'), destination: 'Milano' }),
     ];
     const accommodations: Accommodation[] = [
       makeAccommodation({
         id: 'hotel-first',
         name: 'Hotel Uno',
-        checkIn: new Date('2026-08-01T15:00:00.000Z'),
-        checkOut: new Date('2026-08-03T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'),
         hotelPolicy: DROPOFF_POLICY,
         coordinates: { lat: 1, lng: 1 },
       }),
       makeAccommodation({
         id: 'hotel-last',
         name: 'Hotel Due',
-        checkIn: new Date('2026-08-03T16:00:00.000Z'),
-        checkOut: new Date('2026-08-06T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-08-03T16:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-08-06T10:00:00.000Z'),
         hotelPolicy: DROPOFF_POLICY,
         coordinates: { lat: 2, lng: 2 },
       }),

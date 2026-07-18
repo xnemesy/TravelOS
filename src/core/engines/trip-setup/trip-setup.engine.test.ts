@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../../../domain/time';
 import { TripSetupEngine } from './trip-setup.engine';
 import { ITripSetupRepository } from './trip-setup.repository.interface';
 import { IContextEngine } from '../types/engines.types';
@@ -57,7 +58,7 @@ describe('TripSetupEngine — depends only on ITripSetupRepository, not MMKV/des
     await engineA.addTransport('trip-1', {
       mode: 'flight',
       destination: 'Lisbona',
-      departureDate: new Date('2026-09-01T10:00:00.000Z'),
+      departureDate: unsafeAsInstantISO('2026-09-01T10:00:00.000Z'),
     } as any);
 
     const engineB = new TripSetupEngine(createFakeContextEngine(), repository);
@@ -78,8 +79,8 @@ describe('TripSetupEngine — depends only on ITripSetupRepository, not MMKV/des
           id: 'a-1',
           type: 'hotel',
           name: 'Hotel Test',
-          checkIn: new Date('2026-09-01T14:00:00.000Z'),
-          checkOut: new Date('2026-09-03T10:00:00.000Z'),
+          checkIn: unsafeAsInstantISO('2026-09-01T14:00:00.000Z'),
+          checkOut: unsafeAsInstantISO('2026-09-03T10:00:00.000Z'),
           confirmed: false,
         } as any,
       ],
@@ -100,8 +101,8 @@ describe('TripSetupEngine — depends only on ITripSetupRepository, not MMKV/des
     const added = await engine.addAccommodation('trip-3', {
       type: 'hotel',
       name: 'Hotel Con Policy',
-      checkIn: new Date('2026-10-01T14:00:00.000Z'),
-      checkOut: new Date('2026-10-05T10:00:00.000Z'),
+      checkIn: unsafeAsInstantISO('2026-10-01T14:00:00.000Z'),
+      checkOut: unsafeAsInstantISO('2026-10-05T10:00:00.000Z'),
       hotelPolicy: {
         allowsLuggageDropoff: true,
         allowsEarlyCheckIn: false,
@@ -127,16 +128,16 @@ describe('TripSetupEngine — depends only on ITripSetupRepository, not MMKV/des
     await engine.addAccommodation('trip-multi', {
       type: 'apartment',
       name: 'Appartamento Legacy',
-      checkIn: new Date('2026-10-01T14:00:00.000Z'),
-      checkOut: new Date('2026-10-03T10:00:00.000Z'),
+      checkIn: unsafeAsInstantISO('2026-10-01T14:00:00.000Z'),
+      checkOut: unsafeAsInstantISO('2026-10-03T10:00:00.000Z'),
     } as any);
 
     // Alloggio 2: con hotelPolicy (formato Sprint 18)
     await engine.addAccommodation('trip-multi', {
       type: 'hotel',
       name: 'Hotel Moderno',
-      checkIn: new Date('2026-10-03T14:00:00.000Z'),
-      checkOut: new Date('2026-10-06T10:00:00.000Z'),
+      checkIn: unsafeAsInstantISO('2026-10-03T14:00:00.000Z'),
+      checkOut: unsafeAsInstantISO('2026-10-06T10:00:00.000Z'),
       hotelPolicy: {
         allowsLuggageDropoff: true,
       },

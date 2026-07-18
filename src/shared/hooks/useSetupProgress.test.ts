@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../../domain/time';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn(),
   getItem: jest.fn(),
@@ -76,7 +77,7 @@ describe('useSetupProgress hook integration with SetupCompletionEngine', () => {
           id: 't-1',
           mode: 'train',
           destination: 'Roma Termini',
-          departureDate: new Date('2026-08-01T08:00:00Z'),
+          departureDate: unsafeAsInstantISO('2026-08-01T08:00:00Z'),
           confirmed: true,
         },
       ],
@@ -85,8 +86,8 @@ describe('useSetupProgress hook integration with SetupCompletionEngine', () => {
           id: 'a-1',
           type: 'hotel',
           name: 'Hotel Colosseo',
-          checkIn: new Date('2026-08-01T14:00:00Z'),
-          checkOut: new Date('2026-08-05T10:00:00Z'),
+          checkIn: unsafeAsInstantISO('2026-08-01T14:00:00Z'),
+          checkOut: unsafeAsInstantISO('2026-08-05T10:00:00Z'),
           confirmed: true,
         },
       ],

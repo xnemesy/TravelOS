@@ -6,6 +6,7 @@ import { TextField } from '../../../../shared/components/forms/TextField';
 import { DateTimeField } from '../../../../shared/components/forms/DateTimeField';
 import { ChipSelector } from '../../../../shared/components/forms/ChipSelector';
 import { Accommodation, AccommodationType } from '../../../../domain/trip/models/trip-setup.model';
+import { unsafeAsInstantISO } from '../../../../domain/time';
 import { validateAccommodationForm } from '../../../../domain/trip/validators/accommodation.validator';
 import { ACCOMMODATION_TYPE_CHIP_OPTIONS } from '../accommodation-type.constants';
 
@@ -49,13 +50,16 @@ export const AccommodationForm: React.FC<AccommodationFormProps> = ({
   tripStartDate,
   tripEndDate,
 }) => {
-  const defaultCheckIn = initial?.checkIn ?? (tripStartDate ? (() => {
+  // initial.* è un InstantISO (stringa) dopo ADR-025 §7 n; lo stato del form
+  // resta `Date` per i DateTimeField. Conversione al confine, nessun cambio di
+  // comportamento (il formato serializzato coincide con `Date.toISOString()`).
+  const defaultCheckIn = initial?.checkIn ? new Date(initial.checkIn) : (tripStartDate ? (() => {
     const d = new Date(tripStartDate);
     d.setHours(15, 0, 0, 0);
     return d;
   })() : buildDefaultCheckIn());
 
-  const defaultCheckOut = initial?.checkOut ?? (tripEndDate ? (() => {
+  const defaultCheckOut = initial?.checkOut ? new Date(initial.checkOut) : (tripEndDate ? (() => {
     const d = new Date(tripEndDate);
     d.setHours(11, 0, 0, 0);
     return d;
@@ -102,8 +106,8 @@ export const AccommodationForm: React.FC<AccommodationFormProps> = ({
       type: type as AccommodationType,
       name: name.trim(),
       address: address.trim() || undefined,
-      checkIn,
-      checkOut,
+      checkIn: unsafeAsInstantISO(checkIn.toISOString()),
+      checkOut: unsafeAsInstantISO(checkOut.toISOString()),
       bookingReference: bookingReference.trim() || undefined,
       confirmationUrl: confirmationUrl.trim() || undefined,
       notes: notes.trim() || undefined,

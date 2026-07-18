@@ -167,14 +167,14 @@ export const AccommodationStep: React.FC<StepComponentProps> = ({ formState, onC
                   <View className="flex-1">
                     <Typography variant="caption" className="text-gray-400 text-xs">Check-in</Typography>
                     <Typography variant="bodySemibold" className="text-gray-800" numberOfLines={1}>
-                      {formatShortDate(item.checkIn)}
+                      {formatShortDate(new Date(item.checkIn))}
                     </Typography>
                   </View>
                   <Ionicons name="arrow-forward" size={16} color="#9CA3AF" className="mx-2" />
                   <View className="flex-1 items-end">
                     <Typography variant="caption" className="text-gray-400 text-xs">Check-out</Typography>
                     <Typography variant="bodySemibold" className="text-gray-800" numberOfLines={1}>
-                      {formatShortDate(item.checkOut)}
+                      {formatShortDate(new Date(item.checkOut))}
                     </Typography>
                   </View>
                 </View>

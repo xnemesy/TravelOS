@@ -167,7 +167,7 @@ export const FlightsStep: React.FC<StepComponentProps> = ({ formState, onChange 
                       {item.origin || 'Da definire'}
                     </Typography>
                     <Typography variant="caption" className="text-gray-500 text-xs mt-0.5">
-                      {formatShortDate(item.departureDate)}
+                      {formatShortDate(new Date(item.departureDate))}
                     </Typography>
                   </View>
                   <Ionicons name="arrow-forward" size={16} color="#9CA3AF" className="mx-2" />
@@ -177,7 +177,7 @@ export const FlightsStep: React.FC<StepComponentProps> = ({ formState, onChange 
                       {item.destination}
                     </Typography>
                     <Typography variant="caption" className="text-gray-500 text-xs mt-0.5">
-                      {formatShortDate(item.arrivalDate || item.departureDate)}
+                      {formatShortDate(new Date(item.arrivalDate || item.departureDate))}
                     </Typography>
                   </View>
                 </View>

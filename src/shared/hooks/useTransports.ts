@@ -23,7 +23,7 @@ export function useTransports(tripId: string | string[]): TransportsSlice {
     if (a.sequenceOrder !== undefined && b.sequenceOrder !== undefined) {
       return a.sequenceOrder - b.sequenceOrder;
     }
-    return a.departureDate.getTime() - b.departureDate.getTime();
+    return new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime();
   });
 
   return {

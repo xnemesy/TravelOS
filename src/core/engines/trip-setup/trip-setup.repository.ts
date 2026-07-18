@@ -1,6 +1,7 @@
 import { ITripSetupRepository } from './trip-setup.repository.interface';
 import { ILocalDatabase } from '../../storage/local-database.interface';
 import { TripSetup } from '../../../domain/trip/models/trip-setup.model';
+import { unsafeAsInstantISO } from '../../../domain/time';
 
 const TRIP_SETUP_CACHE_KEY_PREFIX = 'trip_setup_';
 
@@ -28,7 +29,15 @@ export class TripSetupRepository implements ITripSetupRepository {
     await this.localDb.set(this.cacheKey(tripId), setup);
   }
 
-  /** Ricostruisce le Date da MMKV (persistite come stringhe ISO via JSON). */
+  /**
+   * Reidrata il TripSetup da MMKV (persistito come JSON: gli instanti sono già
+   * stringhe ISO su disco). `createdAt`/`updatedAt` restano `Date` (fuori dallo
+   * scope di ADR-025 §7 n). Gli instanti di Transport/Accommodation, migrati a
+   * `InstantISO` (§7 n), vengono lasciati come stringhe e semplicemente
+   * ri-brandati: il formato su disco è invariato, non si ricostruisce più un
+   * `Date`, così il tipo a runtime coincide con quello dichiarato e con lo
+   * schema (`InstantISOSchema` accetta solo stringhe).
+   */
   private deserialize(raw: any): TripSetup {
     return {
       ...raw,
@@ -36,13 +45,13 @@ export class TripSetupRepository implements ITripSetupRepository {
       updatedAt: new Date(raw.updatedAt),
       transports: raw.transports?.map((t: any) => ({
         ...t,
-        departureDate: new Date(t.departureDate),
-        arrivalDate: t.arrivalDate ? new Date(t.arrivalDate) : undefined,
+        departureDate: unsafeAsInstantISO(t.departureDate),
+        arrivalDate: t.arrivalDate ? unsafeAsInstantISO(t.arrivalDate) : undefined,
       })),
       accommodations: raw.accommodations?.map((a: any) => ({
         ...a,
-        checkIn: new Date(a.checkIn),
-        checkOut: new Date(a.checkOut),
+        checkIn: unsafeAsInstantISO(a.checkIn),
+        checkOut: unsafeAsInstantISO(a.checkOut),
       })),
     };
   }

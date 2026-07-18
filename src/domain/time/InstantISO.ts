@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * ============================================================================
  * InstantISO — Il tipo di dominio per un instante (ADR-025 §4.1)
@@ -70,3 +72,15 @@ export function isInstantISOFormat(value: string): boolean {
 export function unsafeAsInstantISO(value: string): InstantISO {
   return value as InstantISO;
 }
+
+/**
+ * Schema Zod di dominio per `InstantISO` (ADR-025 §7 n). Rispecchia il tipo
+ * branded: valida *strutturalmente* la stringa con `isInstantISOFormat` e
+ * lascia il valore invariato a runtime (nessuna trasformazione, nessun `Date`),
+ * preservando così esattamente il formato serializzato già presente su disco
+ * (MMKV memorizza stringhe ISO). L'output tipizzato è `InstantISO`.
+ */
+export const InstantISOSchema = z.custom<InstantISO>(
+  (value) => typeof value === 'string' && isInstantISOFormat(value),
+  { message: 'InstantISO non valido: attesa stringa ISO-8601 UTC con suffisso Z' }
+);

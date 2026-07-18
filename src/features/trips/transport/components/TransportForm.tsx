@@ -6,6 +6,7 @@ import { TextField } from '../../../../shared/components/forms/TextField';
 import { DateTimeField } from '../../../../shared/components/forms/DateTimeField';
 import { ChipSelector } from '../../../../shared/components/forms/ChipSelector';
 import { Transport, TransportMode } from '../../../../domain/trip/models/trip-setup.model';
+import { unsafeAsInstantISO } from '../../../../domain/time';
 import { validateTransportForm } from '../../../../domain/trip/validators/transport.validator';
 import { TRANSPORT_MODE_CHIP_OPTIONS } from '../transport-mode.constants';
 
@@ -47,13 +48,16 @@ export const TransportForm: React.FC<TransportFormProps> = ({
   tripStartDate,
   tripEndDate,
 }) => {
-  const defaultDeparture = initial?.departureDate ?? (tripStartDate ? (() => {
+  // initial.* è un InstantISO (stringa) dopo ADR-025 §7 n; lo stato del form
+  // resta `Date` per i DateTimeField. Conversione al confine, nessun cambio di
+  // comportamento (il formato serializzato coincide con `Date.toISOString()`).
+  const defaultDeparture = initial?.departureDate ? new Date(initial.departureDate) : (tripStartDate ? (() => {
     const d = new Date(tripStartDate);
     d.setHours(9, 0, 0, 0);
     return d;
   })() : buildDefaultDepartureDate());
 
-  const defaultArrival = initial?.arrivalDate ?? buildDefaultArrivalDate(defaultDeparture);
+  const defaultArrival = initial?.arrivalDate ? new Date(initial.arrivalDate) : buildDefaultArrivalDate(defaultDeparture);
 
   const [mode, setMode] = useState<TransportMode | ''>(initial?.mode ?? '');
   const [origin, setOrigin] = useState(initial?.origin ?? '');
@@ -94,8 +98,8 @@ export const TransportForm: React.FC<TransportFormProps> = ({
       mode: mode as TransportMode,
       origin: origin.trim(),
       destination: destination.trim(),
-      departureDate,
-      arrivalDate,
+      departureDate: unsafeAsInstantISO(departureDate.toISOString()),
+      arrivalDate: unsafeAsInstantISO(arrivalDate.toISOString()),
       bookingReference: bookingReference.trim() || undefined,
       notes: notes.trim() || undefined,
       confirmed: initial?.confirmed ?? false,

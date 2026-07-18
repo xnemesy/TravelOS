@@ -46,10 +46,10 @@ export const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodat
 
       <View className="flex-row items-center justify-between mt-1.5">
         <Typography variant="caption" className="text-gray-500">
-          Check-in {formatDateTime(accommodation.checkIn)}
+          Check-in {formatDateTime(new Date(accommodation.checkIn))}
         </Typography>
         <Typography variant="caption" className="text-gray-500">
-          Check-out {formatDateTime(accommodation.checkOut)}
+          Check-out {formatDateTime(new Date(accommodation.checkOut))}
         </Typography>
       </View>
 

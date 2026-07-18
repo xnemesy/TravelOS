@@ -82,10 +82,10 @@ export class JourneyAnchorEngine {
     let arrivalAirportISO: string | undefined;
 
     if (arrivalTransport) {
-      const startISO = arrivalTransport.departureDate.toISOString();
+      const startISO = new Date(arrivalTransport.departureDate).toISOString();
       // Senza arrivalDate nota, l'unico istante certo è la partenza: l'arrivo
       // reale resta ignoto finché il TripSetup non lo specifica.
-      const endISO = (arrivalTransport.arrivalDate || arrivalTransport.departureDate).toISOString();
+      const endISO = new Date(arrivalTransport.arrivalDate || arrivalTransport.departureDate).toISOString();
       arrivalAirportISO = endISO;
 
       anchors.push({
@@ -116,7 +116,7 @@ export class JourneyAnchorEngine {
 
     if (arrivalAirportISO && firstAccommodation) {
       const transferStartISO = arrivalAirportISO;
-      const checkInISO = firstAccommodation.checkIn.toISOString();
+      const checkInISO = new Date(firstAccommodation.checkIn).toISOString();
       transferEndCandidate = addMinutesISO(transferStartISO, TRANSFER_DEFAULT_MINUTES);
       transferEndISO = transferEndCandidate;
       if (new Date(transferEndCandidate) > new Date(checkInISO) && new Date(transferStartISO) < new Date(checkInISO)) {
@@ -137,7 +137,7 @@ export class JourneyAnchorEngine {
     }
 
     if (firstAccommodation) {
-      const checkInISO = firstAccommodation.checkIn.toISOString();
+      const checkInISO = new Date(firstAccommodation.checkIn).toISOString();
       let effectiveCheckInISO = checkInISO;
       if (transferEndCandidate && new Date(checkInISO) < new Date(transferEndCandidate)) {
         effectiveCheckInISO = transferEndCandidate;
@@ -157,7 +157,7 @@ export class JourneyAnchorEngine {
     }
 
     if (lastAccommodation) {
-      const checkOutISO = lastAccommodation.checkOut.toISOString();
+      const checkOutISO = new Date(lastAccommodation.checkOut).toISOString();
       anchors.push({
         id: `anchor-check-out-${lastAccommodation.id}`,
         kind: 'check_out',
@@ -172,7 +172,7 @@ export class JourneyAnchorEngine {
     }
 
     if (departureTransport) {
-      const departureFlightStartISO = departureTransport.departureDate.toISOString();
+      const departureFlightStartISO = new Date(departureTransport.departureDate).toISOString();
       const departureAirportStartISO = addMinutesISO(departureFlightStartISO, -AIRPORT_BUFFER_MINUTES);
       const departureTransferEndISO = departureAirportStartISO;
       const departureTransferStartISO = addMinutesISO(departureTransferEndISO, -TRANSFER_DEFAULT_MINUTES);
@@ -206,7 +206,7 @@ export class JourneyAnchorEngine {
         label: `Partenza ${departureTransport.mode === 'flight' ? 'in volo' : 'in transito'} da ${departureTransport.origin || departureTransport.destination}`,
         date: dateStrOf(departureFlightStartISO),
         startISO: departureFlightStartISO,
-        endISO: (departureTransport.arrivalDate || departureTransport.departureDate).toISOString(),
+        endISO: new Date(departureTransport.arrivalDate || departureTransport.departureDate).toISOString(),
         sourceType: 'transport',
         sourceId: departureTransport.id,
       });

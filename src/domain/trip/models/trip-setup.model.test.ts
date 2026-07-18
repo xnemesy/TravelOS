@@ -14,7 +14,7 @@ describe('TransportSchema', () => {
     id: 't1',
     mode: 'flight' as const,
     destination: 'Budapest',
-    departureDate: new Date('2026-08-01T10:00:00.000Z'),
+    departureDate: '2026-08-01T10:00:00.000Z',
   };
 
   it('accetta un Transport minimo valido', () => {
@@ -35,7 +35,7 @@ describe('TransportSchema', () => {
   it('rifiuta arrivalDate precedente a departureDate', () => {
     const result = TransportSchema.safeParse({
       ...base,
-      arrivalDate: new Date('2026-07-31T00:00:00.000Z'),
+      arrivalDate: '2026-07-31T00:00:00.000Z',
     });
     expect(result.success).toBe(false);
   });
@@ -71,8 +71,8 @@ describe('AccommodationSchema', () => {
     id: 'a1',
     type: 'hotel' as const,
     name: 'Hotel Danubio',
-    checkIn: new Date('2026-08-01T14:00:00.000Z'),
-    checkOut: new Date('2026-08-05T10:00:00.000Z'),
+    checkIn: '2026-08-01T14:00:00.000Z',
+    checkOut: '2026-08-05T10:00:00.000Z',
   };
 
   it('accetta un Accommodation minimo valido', () => {
@@ -87,7 +87,7 @@ describe('AccommodationSchema', () => {
   it('rifiuta checkOut precedente a checkIn', () => {
     const result = AccommodationSchema.safeParse({
       ...base,
-      checkOut: new Date('2026-07-30T00:00:00.000Z'),
+      checkOut: '2026-07-30T00:00:00.000Z',
     });
     expect(result.success).toBe(false);
   });
@@ -140,12 +140,11 @@ describe('AccommodationSchema', () => {
       allowsLateCheckout: false,
     });
 
-    // Verifica serializzazione e deserializzazione roundtrip
+    // Verifica serializzazione e deserializzazione roundtrip. Dopo ADR-025 §7 n
+    // gli instanti sono InstantISO (stringhe): il JSON round-trip li preserva
+    // già nel formato corretto, nessun ripristino a Date è necessario.
     const serialized = JSON.stringify(parsed);
     const deserializedJson = JSON.parse(serialized);
-    // Ripristino delle date prima del parse
-    deserializedJson.checkIn = new Date(deserializedJson.checkIn);
-    deserializedJson.checkOut = new Date(deserializedJson.checkOut);
     const deserialized = AccommodationSchema.parse(deserializedJson);
     expect(deserialized.hotelPolicy?.allowsLuggageDropoff).toBe(true);
     expect(deserialized.hotelPolicy?.allowsEarlyCheckIn).toBe(true);
@@ -159,8 +158,6 @@ describe('AccommodationSchema', () => {
     // Deserializzazione vecchio formato
     const serializedOld = JSON.stringify(base);
     const deserializedOldJson = JSON.parse(serializedOld);
-    deserializedOldJson.checkIn = new Date(deserializedOldJson.checkIn);
-    deserializedOldJson.checkOut = new Date(deserializedOldJson.checkOut);
     const deserializedOld = AccommodationSchema.parse(deserializedOldJson);
     expect(deserializedOld.hotelPolicy).toBeUndefined();
   });

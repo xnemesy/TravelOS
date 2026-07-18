@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../../../domain/time';
 import { TimelineEngine } from './timeline.engine';
 import { ITimelineRepository } from './timeline.repository.interface';
 import { TripSetupEngine } from '../trip-setup/trip-setup.engine';
@@ -171,8 +172,8 @@ describe('TimelineEngine — Journey Anchors wiring (TripSetupEngine → Journey
         mode: 'flight',
         origin: 'Milano',
         destination: 'Roma',
-        departureDate: new Date('2026-09-01T13:00:00.000Z'),
-        arrivalDate: new Date('2026-09-01T14:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-09-01T13:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-09-01T14:30:00.000Z'),
         confirmed: true,
       } as Transport,
       {
@@ -180,8 +181,8 @@ describe('TimelineEngine — Journey Anchors wiring (TripSetupEngine → Journey
         mode: 'flight',
         origin: 'Roma',
         destination: 'Milano',
-        departureDate: new Date('2026-09-03T18:00:00.000Z'),
-        arrivalDate: new Date('2026-09-03T19:30:00.000Z'),
+        departureDate: unsafeAsInstantISO('2026-09-03T18:00:00.000Z'),
+        arrivalDate: unsafeAsInstantISO('2026-09-03T19:30:00.000Z'),
         confirmed: true,
       } as Transport,
     ];
@@ -190,8 +191,8 @@ describe('TimelineEngine — Journey Anchors wiring (TripSetupEngine → Journey
         id: 'hotel-1',
         type: 'hotel',
         name: 'Hotel Roma',
-        checkIn: new Date('2026-09-01T16:00:00.000Z'),
-        checkOut: new Date('2026-09-03T10:00:00.000Z'),
+        checkIn: unsafeAsInstantISO('2026-09-01T16:00:00.000Z'),
+        checkOut: unsafeAsInstantISO('2026-09-03T10:00:00.000Z'),
         confirmed: true,
       } as Accommodation,
     ];
@@ -334,8 +335,8 @@ describe('TimelineEngine — Journey Anchor regression: arrival time changed aft
       mode: 'flight',
       origin: 'Milano',
       destination: 'Roma',
-      departureDate: new Date(2026, 8, 1, 9, 0),
-      arrivalDate: new Date(2026, 8, 1, 11, 0),
+      departureDate: unsafeAsInstantISO(new Date(2026, 8, 1, 9, 0).toISOString()),
+      arrivalDate: unsafeAsInstantISO(new Date(2026, 8, 1, 11, 0).toISOString()),
       confirmed: true,
     } as Omit<Transport, 'id'>);
 
@@ -347,7 +348,7 @@ describe('TimelineEngine — Journey Anchor regression: arrival time changed aft
 
     // L'utente cambia l'orario di arrivo dopo la creazione del trip.
     await tripSetupEngine.updateTransport('trip-1', transport.id, {
-      arrivalDate: new Date(2026, 8, 1, 23, 30),
+      arrivalDate: unsafeAsInstantISO(new Date(2026, 8, 1, 23, 30).toISOString()),
     });
 
     // Ricomposizione ("Compose" premuto di nuovo).
@@ -371,15 +372,15 @@ describe('TimelineEngine — Journey Anchor regression: arrival time changed aft
       mode: 'flight',
       origin: 'Milano',
       destination: 'Roma',
-      departureDate: new Date('2026-09-01T09:00:00.000Z'),
-      arrivalDate: new Date('2026-09-01T11:00:00.000Z'),
+      departureDate: unsafeAsInstantISO('2026-09-01T09:00:00.000Z'),
+      arrivalDate: unsafeAsInstantISO('2026-09-01T11:00:00.000Z'),
       confirmed: true,
     } as Omit<Transport, 'id'>);
 
     await tripSetupEngine.updateTransport('trip-1', transport.id, {
       // Un arrivo tardo-serale con un breve volo di rientro impossibile:
       // qualunque attività reale deve comparire dopo le 23:30, mai prima.
-      arrivalDate: new Date('2026-09-01T23:30:00.000Z'),
+      arrivalDate: unsafeAsInstantISO('2026-09-01T23:30:00.000Z'),
     });
 
     const shortActivity = buildPlace({ id: 'aperitivo', name: 'Aperitivo veloce', durationMinutes: 15 });
@@ -414,8 +415,8 @@ describe('TimelineEngine — Journey Anchor regression: arrival time changed aft
       mode: 'flight',
       origin: 'Milano',
       destination: 'Roma',
-      departureDate: new Date('2026-09-01T21:30:00.000Z'),
-      arrivalDate: new Date('2026-09-01T23:30:00.000Z'),
+      departureDate: unsafeAsInstantISO('2026-09-01T21:30:00.000Z'),
+      arrivalDate: unsafeAsInstantISO('2026-09-01T23:30:00.000Z'),
       confirmed: true,
     } as Omit<Transport, 'id'>);
 

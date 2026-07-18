@@ -1,3 +1,4 @@
+import { unsafeAsInstantISO } from '../time';
 import { Accommodation, Transport } from '../trip/models/trip-setup.model';
 import { EndOfDayClosureService, EndOfDayClosureQuery } from './EndOfDayClosureService';
 
@@ -11,8 +12,8 @@ describe('EndOfDayClosureService', () => {
     id: 'acc-1',
     type: 'hotel',
     name: 'Hotel Central',
-    checkIn: new Date('2026-08-01T15:00:00.000Z'),
-    checkOut: new Date('2026-08-05T10:00:00.000Z'),
+    checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+    checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z'),
     confirmed: false,
     coordinates: { lat: 38.72, lng: -9.14 },
     ...overrides,
@@ -22,7 +23,7 @@ describe('EndOfDayClosureService', () => {
     id: 'transport-1',
     mode: 'flight',
     destination: 'Lisbona',
-    departureDate: new Date('2026-08-01T08:00:00.000Z'),
+    departureDate: unsafeAsInstantISO('2026-08-01T08:00:00.000Z'),
     confirmed: false,
     ...overrides,
   });
@@ -72,14 +73,14 @@ describe('EndOfDayClosureService', () => {
     const decision = EndOfDayClosureService.evaluate(
       baseQuery({
         dateStr: '2026-08-05', // check-out questo giorno
-        accommodations: [buildAccommodation({ checkOut: new Date('2026-08-05T10:00:00.000Z') })],
+        accommodations: [buildAccommodation({ checkOut: unsafeAsInstantISO('2026-08-05T10:00:00.000Z') })],
         transports: [
-          buildTransport({ id: 't-arrival', arrivalDate: new Date('2026-08-01T09:00:00.000Z') }),
+          buildTransport({ id: 't-arrival', arrivalDate: unsafeAsInstantISO('2026-08-01T09:00:00.000Z') }),
           buildTransport({
             id: 't-departure',
             origin: 'Lisbona',
             destination: 'Roma',
-            departureDate: new Date('2026-08-05T20:00:00.000Z'),
+            departureDate: unsafeAsInstantISO('2026-08-05T20:00:00.000Z'),
           }),
         ],
         lastActivityEndMinutes: 12 * 60,
@@ -101,14 +102,14 @@ describe('EndOfDayClosureService', () => {
           buildAccommodation({
             id: 'acc-a',
             name: 'Hotel A',
-            checkIn: new Date('2026-08-01T15:00:00.000Z'),
-            checkOut: new Date('2026-08-03T10:00:00.000Z'), // esce oggi
+            checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+            checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'), // esce oggi
           }),
           buildAccommodation({
             id: 'acc-b',
             name: 'Hotel B',
-            checkIn: new Date('2026-08-03T16:00:00.000Z'), // entra oggi
-            checkOut: new Date('2026-08-06T10:00:00.000Z'),
+            checkIn: unsafeAsInstantISO('2026-08-03T16:00:00.000Z'), // entra oggi
+            checkOut: unsafeAsInstantISO('2026-08-06T10:00:00.000Z'),
           }),
         ],
         lastActivityEndMinutes: 18 * 60,
@@ -129,8 +130,8 @@ describe('EndOfDayClosureService', () => {
         // Nessun alloggio copre la notte del 3 (esce la mattina del 3).
         accommodations: [
           buildAccommodation({
-            checkIn: new Date('2026-08-01T15:00:00.000Z'),
-            checkOut: new Date('2026-08-03T10:00:00.000Z'),
+            checkIn: unsafeAsInstantISO('2026-08-01T15:00:00.000Z'),
+            checkOut: unsafeAsInstantISO('2026-08-03T10:00:00.000Z'),
           }),
         ],
         transports: [
@@ -139,8 +140,8 @@ describe('EndOfDayClosureService', () => {
             mode: 'train',
             destination: 'Madrid',
             // Treno notturno: parte il 3 sera, arriva il 4 mattina.
-            departureDate: new Date('2026-08-03T22:00:00.000Z'),
-            arrivalDate: new Date('2026-08-04T07:00:00.000Z'),
+            departureDate: unsafeAsInstantISO('2026-08-03T22:00:00.000Z'),
+            arrivalDate: unsafeAsInstantISO('2026-08-04T07:00:00.000Z'),
           }),
         ],
         lastActivityEndMinutes: 20 * 60,

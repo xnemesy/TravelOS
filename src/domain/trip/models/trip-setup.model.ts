@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InstantISOSchema } from '../../time';
 
 /**
  * ============================================================================
@@ -32,8 +33,10 @@ export const TransportSchema = z
     provider: z.string().optional(),
     origin: z.string().optional(),
     destination: z.string().min(1, 'La destinazione è obbligatoria'),
-    departureDate: z.date(),
-    arrivalDate: z.date().optional(),
+    // ADR-025 §7 n: instanti di dominio come InstantISO (stringa ISO-8601 UTC
+    // branded), non più `Date`. Nessun cambio di formato su disco.
+    departureDate: InstantISOSchema,
+    arrivalDate: InstantISOSchema.optional(),
     bookingReference: z.string().optional(),
     confirmed: z.boolean().default(false),
     cost: z.number().nonnegative().optional(),
@@ -45,6 +48,9 @@ export const TransportSchema = z
     // aggiunto additivamente per note operative (es. "check-in online già fatto").
     notes: z.string().optional(),
   })
+  // Confronto lessicografico su InstantISO: per la forma canonica ISO-8601 UTC
+  // a larghezza fissa (`YYYY-MM-DDTHH:mm:ss.sssZ`) l'ordine tra stringhe coincide
+  // con l'ordine cronologico. Nessun `Date` nel dominio (ADR-025 §14.1).
   .refine((data) => !data.arrivalDate || data.arrivalDate >= data.departureDate, {
     message: 'arrivalDate non può precedere departureDate',
     path: ['arrivalDate'],
@@ -72,8 +78,9 @@ export const AccommodationSchema = z
     type: AccommodationTypeSchema,
     name: z.string().min(1, 'Il nome è obbligatorio'),
     address: z.string().optional(),
-    checkIn: z.date(),
-    checkOut: z.date(),
+    // ADR-025 §7 n: instanti di dominio come InstantISO (vedi Transport sopra).
+    checkIn: InstantISOSchema,
+    checkOut: InstantISOSchema,
     bookingReference: z.string().optional(),
     confirmationUrl: z.string().url().optional(),
     notes: z.string().optional(),
@@ -83,6 +90,8 @@ export const AccommodationSchema = z
     coordinates: z.object({ lat: z.number(), lng: z.number() }).optional(),
     hotelPolicy: HotelPolicySchema.optional(),
   })
+  // Confronto lessicografico su InstantISO (vedi nota su Transport sopra):
+  // ordine tra stringhe == ordine cronologico, nessun `Date` (ADR-025 §14.1).
   .refine((data) => data.checkOut > data.checkIn, {
     message: 'checkOut deve essere successivo a checkIn',
     path: ['checkOut'],

@@ -47,11 +47,11 @@ export const TransportCard: React.FC<TransportCardProps> = ({ transport, onPress
 
       <View className="flex-row items-center justify-between mt-1.5">
         <Typography variant="caption" className="text-gray-500">
-          {formatDateTime(transport.departureDate)}
+          {formatDateTime(new Date(transport.departureDate))}
         </Typography>
         {transport.arrivalDate ? (
           <Typography variant="caption" className="text-gray-500">
-            → {formatDateTime(transport.arrivalDate)}
+            → {formatDateTime(new Date(transport.arrivalDate))}
           </Typography>
         ) : null}
       </View>

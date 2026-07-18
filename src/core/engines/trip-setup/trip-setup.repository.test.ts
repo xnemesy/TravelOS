@@ -32,7 +32,7 @@ describe('TripSetupRepository', () => {
     await expect(repo.getTripSetup('trip-never-saved')).resolves.toBeNull();
   });
 
-  it('reconstructs Date instances on read — createdAt/updatedAt and Transport/Accommodation date fields', async () => {
+  it('reconstructs Date for createdAt/updatedAt e mantiene InstantISO (stringa) per gli instanti di Transport/Accommodation (ADR-025 §7 n)', async () => {
     const setup: TripSetup = {
       tripId: 'trip-1',
       createdAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -42,8 +42,8 @@ describe('TripSetupRepository', () => {
           id: 't-1',
           mode: 'flight',
           destination: 'Lisbona',
-          departureDate: new Date('2026-08-01T10:00:00.000Z'),
-          arrivalDate: new Date('2026-08-01T12:00:00.000Z'),
+          departureDate: '2026-08-01T10:00:00.000Z',
+          arrivalDate: '2026-08-01T12:00:00.000Z',
           confirmed: false,
         } as any,
       ],
@@ -52,8 +52,8 @@ describe('TripSetupRepository', () => {
           id: 'a-1',
           type: 'hotel',
           name: 'Hotel Lisboa',
-          checkIn: new Date('2026-08-01T14:00:00.000Z'),
-          checkOut: new Date('2026-08-04T10:00:00.000Z'),
+          checkIn: '2026-08-01T14:00:00.000Z',
+          checkOut: '2026-08-04T10:00:00.000Z',
           confirmed: true,
         } as any,
       ],
@@ -72,10 +72,12 @@ describe('TripSetupRepository', () => {
     expect(loaded?.createdAt).toBeInstanceOf(Date);
     expect(loaded?.updatedAt).toBeInstanceOf(Date);
     expect(loaded?.createdAt?.toISOString()).toBe('2026-07-01T00:00:00.000Z');
-    expect(loaded?.transports?.[0].departureDate).toBeInstanceOf(Date);
-    expect(loaded?.transports?.[0].arrivalDate).toBeInstanceOf(Date);
-    expect(loaded?.accommodations?.[0].checkIn).toBeInstanceOf(Date);
-    expect(loaded?.accommodations?.[0].checkOut).toBeInstanceOf(Date);
+    // Gli instanti migrati restano stringhe ISO (InstantISO), invariati rispetto
+    // al formato su disco — nessuna ricostruzione a Date (ADR-025 §7 n).
+    expect(loaded?.transports?.[0].departureDate).toBe('2026-08-01T10:00:00.000Z');
+    expect(loaded?.transports?.[0].arrivalDate).toBe('2026-08-01T12:00:00.000Z');
+    expect(loaded?.accommodations?.[0].checkIn).toBe('2026-08-01T14:00:00.000Z');
+    expect(loaded?.accommodations?.[0].checkOut).toBe('2026-08-04T10:00:00.000Z');
   });
 
   it('leaves arrivalDate undefined when absent, rather than reconstructing an invalid Date', async () => {
@@ -88,7 +90,7 @@ describe('TripSetupRepository', () => {
           id: 't-1',
           mode: 'train',
           destination: 'Porto',
-          departureDate: new Date('2026-08-01T10:00:00.000Z'),
+          departureDate: '2026-08-01T10:00:00.000Z',
           confirmed: false,
         } as any,
       ],
