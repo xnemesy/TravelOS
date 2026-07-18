@@ -4,6 +4,29 @@
 
 ---
 
+## Ultimo aggiornamento: 2026-07-18 — Sprint 18.5: wiring della temporal infrastructure (ADR-025) nel composition root
+
+## Ultimo sprint (2026-07-18) — Sprint 18.5: DI wiring dei servizi temporali (additivo, zero cambi di comportamento)
+
+Sprint brevissimo e deliberatamente additivo: rendere disponibili al progetto i servizi temporali di ADR-025 (già costruiti e testati ma importati da nessuno) attraverso la convenzione di composizione già in uso, **senza migrare alcun consumatore e senza introdurre logica nuova** — così la successiva migrazione di `JourneyAnchorEngine` (ADR-025 §7 Fase 2) non dovrà fermarsi per introdurre la DI.
+
+**Contesto verificato prima di agire**: il progetto **non ha un container DI formale**; la "dependency injection / service locator" è un composition root a **singleton di modulo** (`export const TravelServices = new TravelServicesPlatform()`, `export const placeRepository = …`). `DefaultTemporalService` si auto-costruisce e i costruttori di `DefaultTemporalService`/`StaticTimeZoneResolver` sono puri e a basso costo (solo tabelle statiche, nessun `Date`/`Intl`/rete/storage) — istanziarli all'import del barrel è privo di side effect.
+
+**Decisione (design approvato)**: esporre i servizi come singleton dal barrel del modulo, `src/infrastructure/time/index.ts`, che diventa il composition root — stessa convenzione di `TravelServices`. Scartati: (a) un metodo su `TravelServices` (è la SIP per provider esterni con rete/cache; il temporal è infrastruttura pura — mescolarli confonde il confine); (b) un container DI (alieno al codebase, non necessario per uno sprint additivo).
+
+**Consegnato**:
+- [`src/infrastructure/time/index.ts`](../../src/infrastructure/time/index.ts): +2 export singleton — `temporalService: TemporalService` e `timeZoneResolver: TimeZoneResolver`, **tipizzati sulle interfacce** (non sulle classi concrete: i consumatori dipendono dal contratto, §14.1); resolver **unica istanza condivisa**, iniettata nel servizio *e* esportata (nessuna seconda fonte di fuso che possa divergere, §4.2/§6.8).
+- [`src/infrastructure/time/index.wiring.test.ts`](../../src/infrastructure/time/index.wiring.test.ts): smoke test di composizione (3 test) — verifica solo che i singleton siano composti/usabili (`temporalService.now()` valido; `timeZoneResolver.resolve({iataCode:'FCO'})` → `Europe/Rome`; stessa istanza di resolver condivisa via servizio). Non duplica i test comportamentali di `DefaultTemporalService`/`TimeZoneResolver`.
+- Design doc: [2026-07-18-temporal-infra-di-wiring-design.md](../superpowers/specs/2026-07-18-temporal-infra-di-wiring-design.md); nota "Stato di implementazione" in [ADR-025](../adr/025-canonical-temporal-model.md).
+
+**Non-obiettivi (YAGNI)**: nessun seam di test-injection (rimandato a quando un consumatore ne avrà bisogno; i test possono `new DefaultTemporalService()` diretto); nessuna migrazione di consumatori; nessuna logica nuova.
+
+**Verificato**: `tsc --noEmit` → 0 errori; `jest` → **35 suite, 408/408 test verdi** (incluso il nuovo smoke test di wiring). Cambio puramente additivo: nulla fuori da `src/*/time/` importa i nuovi simboli, nessun call site esistente modificato.
+
+**Prossimo passo (non iniziato)**: ADR-025 §7 Fase 2 — migrazione di `JourneyAnchorEngine` (stateless, con suite dedicata) dietro riscrittura preventiva dei test nei 4 fusi di riferimento, ora sbloccata dalla DI presente.
+
+---
+
 ## Ultimo aggiornamento: 2026-07-11 (quinta parte) — Architecture Verification Pass su ADR-020/021/022: 3 difetti trovati e corretti
 
 ## Ultimo sprint (2026-07-11, quinta parte) — Fix mirati dai findings della verifica architetturale (nessun refactor, nessuna nuova feature)
